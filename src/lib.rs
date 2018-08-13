@@ -1,3 +1,26 @@
+//! # Dip
+//! 
+//! Set up some kind of directory structure like this:
+//! 
+//! ```
+//! root/
+//!   - config.toml
+//!   - hooks/
+//!       - website.com
+//! ```
+//! 
+//! where every file in the `hooks` subdirectory is a TOML document of the following format:
+//! 
+//! ```toml
+//! # The handler to use. This must match one of the handlers defined in the
+//! # handlers directory or one of the builtins such as "github"
+//! type = "github"
+//! 
+//! # wip lol
+//! ```
+//! 
+//! Then run the `dip` binary with the option `-d <root>` where `root` points to the root directory you made above.
+
 #[macro_use]
 extern crate failure;
 extern crate hyper;
@@ -8,8 +31,8 @@ extern crate regex;
 extern crate toml;
 extern crate walkdir;
 
-mod handlers;
-mod hook;
+pub mod handlers;
+pub mod hook;
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -28,7 +51,7 @@ use regex::Regex;
 use toml::Value;
 use walkdir::WalkDir;
 
-use handlers::*;
+pub use handlers::Handler;
 use hook::*;
 
 const URIPATTERN_STR: &str = r"/webhook/(?P<name>[A-Za-z._][A-Za-z0-9._]*)";
@@ -150,6 +173,7 @@ where
     }
 }
 
+/// Main entry point of the entire application.
 pub fn run<P>(root: P) -> Result<(), Error>
 where
     P: AsRef<Path>,
