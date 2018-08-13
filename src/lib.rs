@@ -1,3 +1,4 @@
+#[macro_use]
 extern crate failure;
 extern crate hyper;
 #[macro_use]
@@ -7,7 +8,7 @@ extern crate regex;
 extern crate toml;
 extern crate walkdir;
 
-mod handler;
+mod handlers;
 mod hook;
 
 use std::collections::HashMap;
@@ -27,13 +28,14 @@ use regex::Regex;
 use toml::Value;
 use walkdir::WalkDir;
 
-use handler::*;
+use handlers::*;
 use hook::*;
 
+const URIPATTERN_STR: &str = r"/webhook/(?P<name>[A-Za-z._][A-Za-z0-9._]*)";
+
 lazy_static! {
-    static ref URIPATTERN: Regex =
-        Regex::new(r"/webhook/(?P<name>[A-Za-z_][A-Za-z0-9_]*)").unwrap();
-    static ref HANDLERS: HashMap<String, Box<Handler>> = HashMap::new();
+    static ref URIPATTERN: Regex = Regex::new(URIPATTERN_STR).unwrap();
+    static ref HANDLERS: Mutex<HashMap<String, Box<Handler>>> = Mutex::new(HashMap::new());
     static ref HOOKS: Mutex<HashMap<String, Hook>> = Mutex::new(HashMap::new());
 }
 
@@ -50,27 +52,28 @@ const NOTFOUND: &str = r#"<html>
     </body>
 </html>"#;
 
-fn service_fn(req: Request<Body>) -> Option<Response<Body>> {
-    let captures = match URIPATTERN.captures(req.uri().path()) {
-        Some(value) => value,
-        None => return None,
-    };
-    let name = match captures.name("name") {
-        Some(name) => name.as_str(),
-        None => return None,
-    };
+fn service_fn(req: &Request<Body>) -> Result<Response<Body>, Error> {
+    let captures = URIPATTERN
+        .captures(req.uri().path())
+        .ok_or(err_msg("Did not match url pattern"))?;
+    let name = captures
+        .name("name")
+        .ok_or(err_msg("Missing name"))?
+        .as_str();
     let hooks = HOOKS.lock().unwrap();
-    let handler = match hooks.get(name) {
-        Some(handler) => handler,
-        None => return None,
-    };
+    let handler = hooks
+        .get(name)
+        .ok_or(err_msg(format!("Hook '{}' doesn't exist", name)))?;
     handler.handle(&req)
 }
 
 fn service_fn_wrapper(req: Request<Body>) -> Response<Body> {
-    match service_fn(req) {
-        Some(response) => response,
-        None => Response::new(Body::from(NOTFOUND)),
+    match service_fn(&req) {
+        Ok(response) => response,
+        Err(err) => {
+            eprintln!("Got error from '{}': {}", req.uri().path(), err);
+            Response::new(Body::from(NOTFOUND))
+        }
     }
 }
 
@@ -80,41 +83,49 @@ where
 {
     println!("Reloading config...");
     // hold on to the lock while config is being reloaded
-    let mut hooks = HOOKS.lock().unwrap();
-    hooks.clear();
-    let hooks_dir = {
-        let mut p = root.as_ref().to_path_buf();
-        p.push("hooks");
-        p
-    };
-    if hooks_dir.exists() {
-        for entry in WalkDir::new(hooks_dir) {
-            let path = match entry.as_ref().map(|e| e.path()) {
-                Ok(path) => path,
-                _ => continue,
-            };
-            if !path.is_file() {
-                continue;
-            }
-            match (|path: &Path| -> Result<(), Error> {
-                let filename = path
-                    .file_name()
-                    .ok_or(err_msg("what the fuck bro"))?
-                    .to_str()
-                    .ok_or(err_msg("???"))?
-                    .to_owned();
-                let mut file = File::open(path)?;
-                let mut contents = String::new();
-                file.read_to_string(&mut contents)?;
+    {
+        let mut handlers = HANDLERS.lock().unwrap();
+        handlers.clear();
+        handlers.insert("github".to_owned(), Box::new(handlers::GithubHandler::new()));
+    }
+    {
+        let mut hooks = HOOKS.lock().unwrap();
+        hooks.clear();
+        let hooks_dir = {
+            let mut p = root.as_ref().to_path_buf();
+            p.push("hooks");
+            p
+        };
+        if hooks_dir.exists() {
+            for entry in WalkDir::new(hooks_dir) {
+                let path = match entry.as_ref().map(|e| e.path()) {
+                    Ok(path) => path,
+                    _ => continue,
+                };
+                if !path.is_file() {
+                    continue;
+                }
+                match (|path: &Path| -> Result<(), Error> {
+                    let filename = path
+                        .file_name()
+                        .ok_or(err_msg("what the fuck bro"))?
+                        .to_str()
+                        .ok_or(err_msg("???"))?
+                        .to_owned();
+                    let mut file = File::open(path)?;
+                    let mut contents = String::new();
+                    file.read_to_string(&mut contents)?;
 
-                let config = contents.parse::<Value>()?;
-                let hook = Hook::from(&config)?;
-                hooks.insert(filename, hook);
-                Ok(())
-            })(path)
-            {
-                Ok(_) => (),
-                Err(err) => eprintln!("Failed to read config from {:?}: {}", path, err),
+                    let config = contents.parse::<Value>()?;
+                    let hook = Hook::from(&config)?;
+                    println!("Added hook '{}'", filename);
+                    hooks.insert(filename, hook);
+                    Ok(())
+                })(path)
+                {
+                    Ok(_) => (),
+                    Err(err) => eprintln!("Failed to read config from {:?}: {}", path, err),
+                }
             }
         }
     }

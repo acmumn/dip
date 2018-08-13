@@ -16,7 +16,7 @@ impl Hook {
             .to_owned();
         Ok(Hook { handler_type })
     }
-    pub fn handle(&self, payload: &Request<Body>) -> Option<Response<Body>> {
-        None
+    pub fn handle(&self, payload: &Request<Body>) -> Result<Response<Body>, Error> {
+        Ok(Response::new(Body::from("lol")))
     }
 }
