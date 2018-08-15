@@ -1,12 +1,17 @@
-mod git;
-mod script;
+mod builder;
 
 use failure::Error;
-use hyper::{Body, Request, Response};
+use serde_json::Value as JsonValue;
+use toml::Value as TomlValue;
 
-pub use self::git::*;
-pub use self::script::*;
+pub use self::builder::*;
 
-pub trait Handler: Send + Sync {
-    fn handle(&self, &Request<Body>) -> Result<Response<Body>, Error>;
+pub struct Handler {
+    pub handle: fn(Result<JsonValue, Error>) -> Result<JsonValue, Error>,
+}
+
+impl Handler {
+    pub fn from(config: &TomlValue) -> Result<Self, Error> {
+        bail!("rip")
+    }
 }

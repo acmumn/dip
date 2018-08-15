@@ -1,29 +1,11 @@
 //! # Dip
-//! 
-//! Set up some kind of directory structure like this:
-//! 
-//! ```
-//! root/
-//!   - config.toml
-//!   - hooks/
-//!       - website.com
-//! ```
-//! 
-//! where every file in the `hooks` subdirectory is a TOML document of the following format:
-//! 
-//! ```toml
-//! # The handler to use. This must match one of the handlers defined in the
-//! # handlers directory or one of the builtins such as "github"
-//! type = "github"
-//! 
-//! # wip lol
-//! ```
-//! 
-//! Then run the `dip` binary with the option `-d <root>` where `root` points to the root directory you made above.
 
 #[macro_use]
 extern crate failure;
 extern crate hyper;
+extern crate serde;
+#[macro_use]
+extern crate serde_json;
 #[macro_use]
 extern crate lazy_static;
 extern crate notify;
@@ -35,8 +17,6 @@ pub mod handlers;
 pub mod hook;
 
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::Read;
 use std::path::Path;
 use std::sync::{mpsc, Mutex};
 use std::thread;
@@ -48,7 +28,6 @@ use hyper::service::service_fn_ok;
 use hyper::{Body, Request, Response, Server};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use regex::Regex;
-use toml::Value;
 use walkdir::WalkDir;
 
 pub use handlers::Handler;
@@ -84,10 +63,15 @@ fn service_fn(req: &Request<Body>) -> Result<Response<Body>, Error> {
         .ok_or(err_msg("Missing name"))?
         .as_str();
     let hooks = HOOKS.lock().unwrap();
-    let handler = hooks
+    let hook = hooks
         .get(name)
         .ok_or(err_msg(format!("Hook '{}' doesn't exist", name)))?;
-    handler.handle(&req)
+    let req_obj = json!({
+        "method": req.method().as_str(),
+    });
+    hook.iter()
+        .fold(Ok(req_obj), |prev, handler| (handler.handle)(prev))
+        .map(|_| Response::new(Body::from("success")))
 }
 
 fn service_fn_wrapper(req: Request<Body>) -> Response<Body> {
@@ -109,12 +93,36 @@ where
     {
         let mut handlers = HANDLERS.lock().unwrap();
         handlers.clear();
-        handlers.insert("github".to_owned(), Box::new(handlers::GithubHandler::new()));
     }
     {
         let mut hooks = HOOKS.lock().unwrap();
         hooks.clear();
-        hook::load_from_config(root, &mut hooks);
+        let hooks_dir = {
+            let mut p = root.as_ref().to_path_buf();
+            p.push("hooks");
+            p
+        };
+        if hooks_dir.exists() {
+            for entry in WalkDir::new(hooks_dir) {
+                let path = match entry.as_ref().map(|e| e.path()) {
+                    Ok(path) => path,
+                    _ => continue,
+                };
+                if !path.is_file() {
+                    continue;
+                }
+                match (|path: &Path| -> Result<(), Error> {
+                    let hook = Hook::from_file(path)?;
+                    let name = hook.get_name();
+                    hooks.insert(name, hook);
+                    Ok(())
+                })(path)
+                {
+                    Ok(_) => (),
+                    Err(err) => eprintln!("Failed to read config from {:?}: {}", path, err),
+                }
+            }
+        }
     }
 }
 
