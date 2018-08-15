@@ -114,43 +114,7 @@ where
     {
         let mut hooks = HOOKS.lock().unwrap();
         hooks.clear();
-        let hooks_dir = {
-            let mut p = root.as_ref().to_path_buf();
-            p.push("hooks");
-            p
-        };
-        if hooks_dir.exists() {
-            for entry in WalkDir::new(hooks_dir) {
-                let path = match entry.as_ref().map(|e| e.path()) {
-                    Ok(path) => path,
-                    _ => continue,
-                };
-                if !path.is_file() {
-                    continue;
-                }
-                match (|path: &Path| -> Result<(), Error> {
-                    let filename = path
-                        .file_name()
-                        .ok_or(err_msg("what the fuck bro"))?
-                        .to_str()
-                        .ok_or(err_msg("???"))?
-                        .to_owned();
-                    let mut file = File::open(path)?;
-                    let mut contents = String::new();
-                    file.read_to_string(&mut contents)?;
-
-                    let config = contents.parse::<Value>()?;
-                    let hook = Hook::from(&config)?;
-                    println!("Added hook '{}'", filename);
-                    hooks.insert(filename, hook);
-                    Ok(())
-                })(path)
-                {
-                    Ok(_) => (),
-                    Err(err) => eprintln!("Failed to read config from {:?}: {}", path, err),
-                }
-            }
-        }
+        hook::load_from_config(root, &mut hooks);
     }
 }
 
