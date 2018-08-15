@@ -52,7 +52,7 @@ impl Hook {
     pub fn iter(&self) -> Iter<Handler> {
         self.handlers.iter()
     }
-    pub fn handle(&self, payload: &Request<Body>) -> Result<Response<Body>, Error> {
+    pub fn handle(&self, _payload: &Request<Body>) -> Result<Response<Body>, Error> {
         Ok(Response::new(Body::from("lol")))
     }
 }

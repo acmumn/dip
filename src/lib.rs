@@ -1,6 +1,5 @@
 //! # Dip
 
-#[macro_use]
 extern crate failure;
 extern crate hyper;
 extern crate serde;
@@ -13,11 +12,11 @@ extern crate regex;
 extern crate toml;
 extern crate walkdir;
 
-pub mod handlers;
+pub mod handler;
 pub mod hook;
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -30,7 +29,7 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use regex::Regex;
 use walkdir::WalkDir;
 
-pub use handlers::Handler;
+pub use handler::*;
 use hook::*;
 
 const URIPATTERN_STR: &str = r"/webhook/(?P<name>[A-Za-z._][A-Za-z0-9._]*)";
@@ -38,6 +37,7 @@ const URIPATTERN_STR: &str = r"/webhook/(?P<name>[A-Za-z._][A-Za-z0-9._]*)";
 lazy_static! {
     static ref URIPATTERN: Regex = Regex::new(URIPATTERN_STR).unwrap();
     static ref HANDLERS: Mutex<HashMap<String, Box<Handler>>> = Mutex::new(HashMap::new());
+    static ref PROGRAMS: Mutex<HashMap<String, PathBuf>> = Mutex::new(HashMap::new());
     static ref HOOKS: Mutex<HashMap<String, Hook>> = Mutex::new(HashMap::new());
 }
 
@@ -70,7 +70,7 @@ fn service_fn(req: &Request<Body>) -> Result<Response<Body>, Error> {
         "method": req.method().as_str(),
     });
     hook.iter()
-        .fold(Ok(req_obj), |prev, handler| (handler.handle)(prev))
+        .fold(Ok(req_obj), |prev, handler| handler.run(prev))
         .map(|_| Response::new(Body::from("success")))
 }
 
@@ -91,8 +91,34 @@ where
     println!("Reloading config...");
     // hold on to the lock while config is being reloaded
     {
-        let mut handlers = HANDLERS.lock().unwrap();
-        handlers.clear();
+        let mut programs = PROGRAMS.lock().unwrap();
+        programs.clear();
+        let programs_dir = {
+            let mut p = root.as_ref().to_path_buf();
+            p.push("handlers");
+            p
+        };
+        if programs_dir.exists() {
+            for entry in WalkDir::new(programs_dir) {
+                let path = match entry.as_ref().map(|e| e.path()) {
+                    Ok(path) => path,
+                    _ => continue,
+                };
+                if !path.is_file() {
+                    continue;
+                }
+                match path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .ok_or(err_msg("???"))
+                    .map(|s| {
+                        let filename = s.to_owned();
+                        programs.insert(filename, path.to_path_buf())
+                    }) {
+                    _ => (), // don't care
+                }
+            }
+        }
     }
     {
         let mut hooks = HOOKS.lock().unwrap();
