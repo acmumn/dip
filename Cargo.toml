@@ -4,6 +4,9 @@ description = "Configurable webhook server."
 version = "0.1.0"
 authors = ["Michael Zhang <failed.down@gmail.com>"]
 
+[workspace]
+members = [".", "ext/github"]
+
 [dependencies]
 failure = "0.1"
 hyper = "0.12"

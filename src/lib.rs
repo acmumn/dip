@@ -12,6 +12,7 @@ extern crate regex;
 extern crate toml;
 extern crate walkdir;
 
+pub mod config;
 pub mod handler;
 pub mod hook;
 
@@ -29,6 +30,7 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use regex::Regex;
 use walkdir::WalkDir;
 
+pub use config::Config;
 pub use handler::*;
 use hook::*;
 
@@ -172,13 +174,10 @@ where
 }
 
 /// Main entry point of the entire application.
-pub fn run<P>(root: P) -> Result<(), Error>
-where
-    P: AsRef<Path>,
-{
-    load_config(&root);
+pub fn run(config: &Config) -> Result<(), Error> {
+    load_config(&config.root);
 
-    let v = root.as_ref().to_path_buf();
+    let v = config.root.clone();
     thread::spawn(|| watch(v));
 
     let addr = ([127, 0, 0, 1], 3000).into();
