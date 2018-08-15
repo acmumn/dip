@@ -10,8 +10,12 @@ use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 struct Opt {
+    /// The root configuration directory for dip.
     #[structopt(short = "d", long = "root", parse(from_os_str))]
     root: PathBuf,
+    /// A string containing the address to bind to.
+    #[structopt(short = "b", long = "bind")]
+    bind: Option<String>,
 }
 
 fn main() -> Result<(), Error> {
