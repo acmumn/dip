@@ -11,10 +11,10 @@ use PROGRAMS;
 
 pub struct Handler {
     config: TomlValue,
-    program: Program,
+    action: Action,
 }
 
-pub enum Program {
+pub enum Action {
     Command(String),
     Exec(PathBuf),
 }
@@ -26,14 +26,14 @@ impl Handler {
             .ok_or(err_msg("No 'type' found."))?
             .as_str()
             .ok_or(err_msg("'type' is not a string."))?;
-        let program = match handler {
-            "script" => {
+        let action = match handler {
+            "command" => {
                 let command = config
                     .get("command")
                     .ok_or(err_msg("No 'command' found"))?
                     .as_str()
                     .ok_or(err_msg("'command' is not a string."))?;
-                Program::Command(command.to_owned())
+                Action::Command(command.to_owned())
             }
             handler => {
                 let programs = PROGRAMS.lock().unwrap();
@@ -41,11 +41,11 @@ impl Handler {
                     .get(handler)
                     .ok_or(err_msg(format!("'{}' is not a valid executable", handler)))
                     .map(|value| value.clone())?;
-                Program::Exec(program)
+                Action::Exec(program)
             }
         };
         let config = config.clone();
-        Ok(Handler { config, program })
+        Ok(Handler { config, action })
     }
     pub fn run(&self, input: JsonValue) -> Result<JsonValue, Error> {
         let config = {
@@ -57,10 +57,14 @@ impl Handler {
             String::from_utf8(buf).unwrap()
         };
 
-        match &self.program {
-            Program::Command(ref cmd) => {
+        match &self.action {
+            Action::Command(ref cmd) => {
                 // TODO: allow some kind of simple variable replacement
-                let output = Command::new("/bin/bash").arg("-c").arg(cmd).output()?;
+                let output = Command::new("/bin/bash")
+                    .env("DIP_ROOT", "lol")
+                    .arg("-c")
+                    .arg(cmd)
+                    .output()?;
                 if !output.status.success() {
                     // TODO: get rid of unwraps
                     return Err(err_msg(format!(
@@ -72,7 +76,7 @@ impl Handler {
                     )));
                 }
             }
-            Program::Exec(ref path) => {
+            Action::Exec(ref path) => {
                 let mut child = Command::new(&path)
                     .env("DIP_ROOT", "")
                     .arg("--config")
