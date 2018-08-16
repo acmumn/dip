@@ -14,6 +14,7 @@ sha-1 = "0.7"
 
 [dependencies]
 failure = "0.1"
+futures = "0.1"
 hyper = "0.12"
 lazy_static = "1.1"
 notify = "4.0"

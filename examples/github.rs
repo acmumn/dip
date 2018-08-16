@@ -13,6 +13,7 @@ extern crate structopt;
 use std::collections::HashMap;
 use std::io::{self, Read};
 use std::iter::FromIterator;
+use std::path::PathBuf;
 
 use failure::{err_msg, Error};
 use generic_array::GenericArray;
@@ -31,6 +32,7 @@ struct Opt {
 #[derive(Serialize, Deserialize)]
 struct Config {
     secret: String,
+    outdir: PathBuf,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -45,7 +47,9 @@ fn main() -> Result<(), Error> {
 
     let mut payload = String::new();
     io::stdin().read_to_string(&mut payload)?;
+    println!("raw payload: {}", payload);
     let payload: Payload = serde_json::from_str(&payload)?;
+    println!("processed payload: {}", payload.body);
 
     let secret = GenericArray::from_iter(config.secret.bytes());
     let mut mac = Hmac::<Sha1>::new(&secret);
@@ -60,13 +64,13 @@ fn main() -> Result<(), Error> {
 
     let auth = payload
         .headers
-        .get("X-Hub-Signature")
+        .get("x-hub-signature")
         .ok_or(err_msg("Missing auth header"))?;
 
     let left = SecStr::from(format!("sha1={}", signature));
     let right = SecStr::from(auth.bytes().collect::<Vec<_>>());
     assert!(left == right, "HMAC signature didn't match");
 
-    println!("{}", payload.body);
+    println!("gonna clone it to {:?}", config.outdir);
     Ok(())
 }

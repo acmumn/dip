@@ -1,13 +1,16 @@
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use failure::{err_msg, Error};
-use serde_json::Value as JsonValue;
+use serde::Serialize;
+use serde_json::{Serializer as JsonSerializer, Value as JsonValue};
 use toml::Value as TomlValue;
 
 use PROGRAMS;
 
 pub struct Handler {
+    config: TomlValue,
     exec: PathBuf,
 }
 
@@ -25,21 +28,46 @@ impl Handler {
                 .ok_or(err_msg(format!("'{}' is not a valid executable", handler)))
                 .map(|value| value.clone())?
         };
-        Ok(Handler { exec })
+        let config = config.clone();
+        Ok(Handler { config, exec })
     }
-    pub fn run(&self, _: Result<JsonValue, Error>) -> Result<JsonValue, Error> {
-        Command::new(&self.exec)
+    pub fn run(&self, input: JsonValue) -> Result<JsonValue, Error> {
+        let config = {
+            let mut buf: Vec<u8> = Vec::new();
+            {
+                let mut serializer = JsonSerializer::new(&mut buf);
+                TomlValue::serialize(&self.config, &mut serializer)?;
+            }
+            String::from_utf8(buf).unwrap()
+        };
+
+        let mut child = Command::new(&self.exec)
             .env("DIP_ROOT", "")
-            .output()
-            .map_err(|err| err_msg(format!("{}", err)))
-            .and_then(|output| {
-                if !output.status.success() {
-                    return Err(err_msg(format!(
-                        "'{:?}' returned with a non-zero status code: {}",
-                        self.exec, output.status
-                    )));
+            .arg("--config")
+            .arg(config)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        {
+            match child.stdin {
+                Some(ref mut stdin) => {
+                    write!(stdin, "{}", input)?;
                 }
-                Ok(json!({}))
-            })
+                None => bail!("done fucked"),
+            };
+        }
+        let output = child.wait_with_output()?;
+        if !output.status.success() {
+            // TODO: get rid of unwraps
+            return Err(err_msg(format!(
+                "'{:?}' returned with a non-zero status code: {}\nstdout:\n{}\nstderr:\n{}",
+                self.exec,
+                output.status,
+                String::from_utf8(output.stdout).unwrap(),
+                String::from_utf8(output.stderr).unwrap()
+            )));
+        }
+        Ok(json!({}))
     }
 }

@@ -1,7 +1,9 @@
 //! # Dip
 
+#[macro_use]
 extern crate failure;
 extern crate hyper;
+extern crate futures;
 extern crate serde;
 #[macro_use]
 extern crate serde_json;
@@ -27,7 +29,7 @@ use std::time::Duration;
 use failure::{err_msg, Error};
 use hyper::rt::Future;
 use hyper::service::service_fn_ok;
-use hyper::{Body, Request, Response, Server};
+use hyper::{Body, Request, Response, Server, StatusCode};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use regex::Regex;
 use walkdir::WalkDir;
@@ -45,22 +47,12 @@ lazy_static! {
     static ref HOOKS: Mutex<HashMap<String, Hook>> = Mutex::new(HashMap::new());
 }
 
-const NOTFOUND: &str = r#"<html>
-    <head>
-        <style>
-            * { font-family: sans-serif; }
-            body { padding: 20px 60px; }
-        </style>
-    </head>
-    <body>
-        <h1>Looks like you took a wrong turn!</h1>
-        <p>There's nothing to see here.</p>
-    </body>
-</html>"#;
+const NOTFOUND: &str = "<html> <head> <style> * { font-family: sans-serif; } body { padding: 20px 60px; } </style> </head> <body> <h1>Looks like you took a wrong turn!</h1> <p>There's nothing to see here.</p> </body> </html>";
 
-fn service_fn(req: &Request<Body>) -> Result<Response<Body>, Error> {
+fn service_fn(req: Request<Body>) -> Result<Response<Body>, Error> {
+    let path = req.uri().path().to_owned();
     let captures = URIPATTERN
-        .captures(req.uri().path())
+        .captures(path.as_ref())
         .ok_or(err_msg("Did not match url pattern"))?;
     let name = captures
         .name("name")
@@ -70,22 +62,41 @@ fn service_fn(req: &Request<Body>) -> Result<Response<Body>, Error> {
     let hook = hooks
         .get(name)
         .ok_or(err_msg(format!("Hook '{}' doesn't exist", name)))?;
-    let req_obj = json!({
-        "method": req.method().as_str(),
-    });
+
+    let req_obj = {
+        let headers = req
+            .headers()
+            .clone()
+            .into_iter()
+            .filter_map(|(k, v)| {
+                let key = k.unwrap().as_str().to_owned();
+                v.to_str().map(|value| (key, value.to_owned())).ok()
+            }).collect::<HashMap<_, _>>();
+        let method = req.method().as_str().to_owned();
+        // probably not idiomatically the best way to do it
+        // i was just trying to get something working
+        let body = "wip".to_owned();
+        json!({
+            "body": body,
+            "headers": headers,
+            "method": method,
+        })
+    };
     hook.iter()
-        .fold(Ok(req_obj), |prev, handler| handler.run(prev))
-        .map(|_| Response::new(Body::from("success")))
+        .fold(Ok(req_obj), |prev, handler| {
+            prev.and_then(|val| handler.run(val))
+        }).map(|_| Response::new(Body::from("success")))
 }
 
 fn service_fn_wrapper(req: Request<Body>) -> Response<Body> {
-    match service_fn(&req) {
-        Ok(response) => response,
-        Err(err) => {
-            eprintln!("Got error from '{}': {}", req.uri().path(), err);
-            Response::new(Body::from(NOTFOUND))
-        }
-    }
+    let uri = req.uri().path().to_owned();
+    service_fn(req).unwrap_or_else(|err| {
+        eprintln!("Error from '{}': {}", uri, err);
+        Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from(NOTFOUND))
+            .unwrap()
+    })
 }
 
 fn load_config<P>(root: P)
@@ -96,6 +107,7 @@ where
     // hold on to the lock while config is being reloaded
     {
         let mut programs = PROGRAMS.lock().unwrap();
+        // TODO: some kind of smart diff
         programs.clear();
         let programs_dir = {
             let mut p = root.as_ref().to_path_buf();
@@ -168,6 +180,7 @@ where
         match rx.recv() {
             Ok(_) => {
                 // for now, naively reload entire config every time
+                // TODO: don't do this
                 load_config(root.as_ref())
             }
             Err(e) => println!("watch error: {:?}", e),
