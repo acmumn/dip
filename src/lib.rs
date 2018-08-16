@@ -29,13 +29,12 @@ use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use failure::{err_msg, Error};
+use failure::Error;
 use hyper::rt::Future;
 use hyper::service::service_fn;
 use hyper::Server;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use regex::Regex;
-use walkdir::WalkDir;
 
 pub use config::Config;
 pub use handler::*;
@@ -53,75 +52,6 @@ lazy_static! {
 
 const NOTFOUND: &str = "<html> <head> <style> * { font-family: sans-serif; } body { padding: 20px 60px; } </style> </head> <body> <h1>Looks like you took a wrong turn!</h1> <p>There's nothing to see here.</p> </body> </html>";
 
-fn load_config<P>(root: P)
-where
-    P: AsRef<Path>,
-{
-    println!("Reloading config...");
-    // hold on to the lock while config is being reloaded
-    {
-        let mut programs = PROGRAMS.lock().unwrap();
-        // TODO: some kind of smart diff
-        programs.clear();
-        let programs_dir = {
-            let mut p = root.as_ref().to_path_buf();
-            p.push("handlers");
-            p
-        };
-        if programs_dir.exists() {
-            for entry in WalkDir::new(programs_dir) {
-                let path = match entry.as_ref().map(|e| e.path()) {
-                    Ok(path) => path,
-                    _ => continue,
-                };
-                if !path.is_file() {
-                    continue;
-                }
-                match path.file_name()
-                    .and_then(|s| s.to_str())
-                    .ok_or(err_msg("???"))
-                    .map(|s| {
-                        let filename = s.to_owned();
-                        programs.insert(filename, path.to_path_buf())
-                    }) {
-                    _ => (), // don't care
-                }
-            }
-        }
-    }
-    {
-        let mut hooks = HOOKS.lock().unwrap();
-        hooks.clear();
-        let hooks_dir = {
-            let mut p = root.as_ref().to_path_buf();
-            p.push("hooks");
-            p
-        };
-        if hooks_dir.exists() {
-            for entry in WalkDir::new(hooks_dir) {
-                let path = match entry.as_ref().map(|e| e.path()) {
-                    Ok(path) => path,
-                    _ => continue,
-                };
-                if !path.is_file() {
-                    continue;
-                }
-                match (|path: &Path| -> Result<(), Error> {
-                    let hook = Hook::from_file(path)?;
-                    let name = hook.get_name();
-                    hooks.insert(name, hook);
-                    Ok(())
-                })(path)
-                {
-                    Ok(_) => (),
-                    Err(err) => eprintln!("Failed to read config from {:?}: {}", path, err),
-                }
-            }
-        }
-    }
-    println!("Done loading config.");
-}
-
 fn watch<P>(root: P) -> notify::Result<()>
 where
     P: AsRef<Path>,
@@ -135,7 +65,7 @@ where
             Ok(_) => {
                 // for now, naively reload entire config every time
                 // TODO: don't do this
-                load_config(root.as_ref())
+                config::load_config(root.as_ref())
             }
             Err(e) => println!("watch error: {:?}", e),
         }
@@ -144,7 +74,7 @@ where
 
 /// Main entry point of the entire application.
 pub fn run(config: &Config) -> Result<(), Error> {
-    load_config(&config.root);
+    config::load_config(&config.root);
 
     let v = config.root.clone();
     thread::spawn(|| watch(v));
