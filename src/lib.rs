@@ -2,8 +2,8 @@
 
 #[macro_use]
 extern crate failure;
-extern crate hyper;
 extern crate futures;
+extern crate hyper;
 extern crate serde;
 #[macro_use]
 extern crate serde_json;
@@ -17,6 +17,7 @@ extern crate walkdir;
 pub mod config;
 pub mod handler;
 pub mod hook;
+pub mod service;
 
 use std::collections::HashMap;
 use std::net::SocketAddrV4;
@@ -28,8 +29,8 @@ use std::time::Duration;
 
 use failure::{err_msg, Error};
 use hyper::rt::Future;
-use hyper::service::service_fn_ok;
-use hyper::{Body, Request, Response, Server, StatusCode};
+use hyper::service::service_fn;
+use hyper::Server;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use regex::Regex;
 use walkdir::WalkDir;
@@ -37,67 +38,18 @@ use walkdir::WalkDir;
 pub use config::Config;
 pub use handler::*;
 use hook::*;
+use service::*;
 
 const URIPATTERN_STR: &str = r"/webhook/(?P<name>[A-Za-z._][A-Za-z0-9._]*)";
 
 lazy_static! {
     static ref URIPATTERN: Regex = Regex::new(URIPATTERN_STR).unwrap();
-    static ref HANDLERS: Mutex<HashMap<String, Box<Handler>>> = Mutex::new(HashMap::new());
+    // static ref HANDLERS: Mutex<HashMap<String, Box<Handler>>> = Mutex::new(HashMap::new());
     static ref PROGRAMS: Mutex<HashMap<String, PathBuf>> = Mutex::new(HashMap::new());
     static ref HOOKS: Mutex<HashMap<String, Hook>> = Mutex::new(HashMap::new());
 }
 
 const NOTFOUND: &str = "<html> <head> <style> * { font-family: sans-serif; } body { padding: 20px 60px; } </style> </head> <body> <h1>Looks like you took a wrong turn!</h1> <p>There's nothing to see here.</p> </body> </html>";
-
-fn service_fn(req: Request<Body>) -> Result<Response<Body>, Error> {
-    let path = req.uri().path().to_owned();
-    let captures = URIPATTERN
-        .captures(path.as_ref())
-        .ok_or(err_msg("Did not match url pattern"))?;
-    let name = captures
-        .name("name")
-        .ok_or(err_msg("Missing name"))?
-        .as_str();
-    let hooks = HOOKS.lock().unwrap();
-    let hook = hooks
-        .get(name)
-        .ok_or(err_msg(format!("Hook '{}' doesn't exist", name)))?;
-
-    let req_obj = {
-        let headers = req
-            .headers()
-            .clone()
-            .into_iter()
-            .filter_map(|(k, v)| {
-                let key = k.unwrap().as_str().to_owned();
-                v.to_str().map(|value| (key, value.to_owned())).ok()
-            }).collect::<HashMap<_, _>>();
-        let method = req.method().as_str().to_owned();
-        // probably not idiomatically the best way to do it
-        // i was just trying to get something working
-        let body = "wip".to_owned();
-        json!({
-            "body": body,
-            "headers": headers,
-            "method": method,
-        })
-    };
-    hook.iter()
-        .fold(Ok(req_obj), |prev, handler| {
-            prev.and_then(|val| handler.run(val))
-        }).map(|_| Response::new(Body::from("success")))
-}
-
-fn service_fn_wrapper(req: Request<Body>) -> Response<Body> {
-    let uri = req.uri().path().to_owned();
-    service_fn(req).unwrap_or_else(|err| {
-        eprintln!("Error from '{}': {}", uri, err);
-        Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .body(Body::from(NOTFOUND))
-            .unwrap()
-    })
-}
 
 fn load_config<P>(root: P)
 where
@@ -123,8 +75,7 @@ where
                 if !path.is_file() {
                     continue;
                 }
-                match path
-                    .file_name()
+                match path.file_name()
                     .and_then(|s| s.to_str())
                     .ok_or(err_msg("???"))
                     .map(|s| {
@@ -197,7 +148,7 @@ pub fn run(config: &Config) -> Result<(), Error> {
 
     let addr: SocketAddrV4 = SocketAddrV4::from_str(config.bind.as_ref())?;
     let server = Server::bind(&addr.into())
-        .serve(|| service_fn_ok(service_fn_wrapper))
+        .serve(|| service_fn(dip_service))
         .map_err(|e| eprintln!("server error: {}", e));
     println!("Listening on {:?}", addr);
     hyper::rt::run(server);

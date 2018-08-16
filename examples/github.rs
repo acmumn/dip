@@ -54,8 +54,7 @@ fn main() -> Result<(), Error> {
     let secret = GenericArray::from_iter(config.secret.bytes());
     let mut mac = Hmac::<Sha1>::new(&secret);
     mac.input(payload.body.as_bytes());
-    let signature = mac
-        .result()
+    let signature = mac.result()
         .code()
         .into_iter()
         .map(|b| format!("{:02x}", b))

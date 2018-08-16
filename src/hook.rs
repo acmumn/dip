@@ -31,8 +31,7 @@ impl Hook {
     where
         P: AsRef<Path>,
     {
-        let filename = path
-            .as_ref()
+        let filename = path.as_ref()
             .file_name()
             .ok_or(err_msg("what the fuck bro"))?
             .to_str()
