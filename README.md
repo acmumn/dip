@@ -6,7 +6,18 @@ Dip
 
 Configurable webhook server.
 
-Read documentation at `cargo doc`.
+Express your webhooks in terms of composable blocks such as:
+
+```toml
+[[handlers]]
+type = "github"
+secret = "hunter2"
+outdir = "/home/michael/dip"
+
+[[handlers]]
+type = "script"
+command = "cargo build"
+```
 
 Contact
 -------
