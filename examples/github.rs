@@ -51,11 +51,11 @@ fn main() -> Result<(), Error> {
     mac.input(payload.body.as_bytes());
     let signature = mac.result().code().into_iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join("");
     
-    let auth = payload.headers.get("X-Hub-Signature").ok_or(err_msg("Missing auth header."))?;
+    let auth = payload.headers.get("X-Hub-Signature").ok_or(err_msg("Missing auth header"))?;
 
     let left = SecStr::from(format!("sha1={}", signature));
     let right = SecStr::from(auth.bytes().collect::<Vec<_>>());
-    assert_eq!(left, right);
+    assert!(left == right, "HMAC signature didn't match");
 
     println!("{}", payload.body);
     Ok(())
