@@ -46,7 +46,6 @@ fn main() -> Result<(), Error> {
     let mut payload = String::new();
     io::stdin().read_to_string(&mut payload)?;
     let payload: Payload = serde_json::from_str(&payload)?;
-    println!("secret = {}", config.secret);
 
     let secret = GenericArray::from_iter(config.secret.bytes());
     let mut mac = Hmac::<Sha1>::new(&secret);
@@ -58,7 +57,6 @@ fn main() -> Result<(), Error> {
         .map(|b| format!("{:02x}", b))
         .collect::<Vec<_>>()
         .join("");
-    println!("sig = {}", signature);
 
     let auth = payload
         .headers
