@@ -69,13 +69,17 @@ impl Handler {
         let output = match &self.action {
             Action::Command(ref cmd) => {
                 // TODO: allow some kind of simple variable replacement
-                let output = Command::new("/bin/bash")
+                let child = Command::new("/bin/bash")
                     .current_dir(&temp_path)
                     .env("DIP_ROOT", "lol")
                     .env("DIP_WORKDIR", temp_path)
                     .arg("-c")
                     .arg(cmd)
-                    .output()?;
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()?;
+                let output = child.wait_with_output()?;
                 if !output.status.success() {
                     // TODO: get rid of unwraps
                     return Err(err_msg(format!(

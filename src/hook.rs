@@ -1,10 +1,11 @@
 use std::fs::File;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::slice::Iter;
 
 use failure::{err_msg, Error};
-use hyper::{Body, Request, Response};
+use hyper::StatusCode;
+use serde_json::Value as JsonValue;
 use toml::Value;
 
 use Handler;
@@ -51,7 +52,30 @@ impl Hook {
     pub fn iter(&self) -> Iter<Handler> {
         self.handlers.iter()
     }
-    pub fn handle(&self, _payload: &Request<Body>) -> Result<Response<Body>, Error> {
-        Ok(Response::new(Body::from("lol")))
+    pub fn handle(
+        &self,
+        req: JsonValue,
+        temp_path: &PathBuf,
+    ) -> Result<(StatusCode, String), Error> {
+        Ok(self.iter()
+            .fold(Ok(req), |prev, handler| {
+                prev.and_then(|val| {
+                    println!("Running {}...", handler.config());
+                    let result = handler.run(&temp_path, val);
+                    println!("{:?}", result);
+                    result
+                })
+            })
+            .map(|res| {
+                (
+                    StatusCode::ACCEPTED,
+                    format!(
+                        "stdout:\n{}\n\nstderr:\n{}",
+                        res.get("stdout").and_then(|v| v.as_str()).unwrap_or(""),
+                        res.get("stderr").and_then(|v| v.as_str()).unwrap_or(""),
+                    ),
+                )
+            })
+            .unwrap_or_else(|err| (StatusCode::BAD_REQUEST, format!("Error: {:?}", err))))
     }
 }

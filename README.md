@@ -12,10 +12,9 @@ Express your webhooks in terms of composable blocks such as:
 [[handlers]]
 type = "github"
 secret = "hunter2"
-outdir = "/home/michael/dip"
 
 [[handlers]]
-type = "script"
+type = "command"
 command = "cargo build"
 ```
 
