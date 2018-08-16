@@ -17,7 +17,9 @@ pub mod handler;
 pub mod hook;
 
 use std::collections::HashMap;
+use std::net::SocketAddrV4;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -180,9 +182,8 @@ pub fn run(config: &Config) -> Result<(), Error> {
     let v = config.root.clone();
     thread::spawn(|| watch(v));
 
-    let addr = ([127, 0, 0, 1], 3000).into();
-
-    let server = Server::bind(&addr)
+    let addr: SocketAddrV4 = SocketAddrV4::from_str(config.bind.as_ref())?;
+    let server = Server::bind(&addr.into())
         .serve(|| service_fn_ok(service_fn_wrapper))
         .map_err(|e| eprintln!("server error: {}", e));
     println!("Listening on {:?}", addr);
