@@ -29,6 +29,7 @@ impl Handler {
     }
     pub fn run(&self, _: Result<JsonValue, Error>) -> Result<JsonValue, Error> {
         Command::new(&self.exec)
+            .env("DIP_ROOT", "")
             .output()
             .map_err(|err| err_msg(format!("{}", err)))
             .and_then(|output| {

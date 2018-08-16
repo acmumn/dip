@@ -4,8 +4,13 @@ description = "Configurable webhook server."
 version = "0.1.0"
 authors = ["Michael Zhang <failed.down@gmail.com>"]
 
-[workspace]
-members = [".", "ext/github"]
+[[example]]
+name = "github"
+[dev_dependencies]
+generic-array = "0.9"
+hmac = "0.6"
+secstr = "0.3"
+sha-1 = "0.7"
 
 [dependencies]
 failure = "0.1"
@@ -19,3 +24,4 @@ serde_json = "1.0"
 structopt = "0.2"
 toml = "0.4"
 walkdir = "2.2"
+
