@@ -33,6 +33,7 @@ struct Opt {
 struct Config {
     secret: String,
     outdir: PathBuf,
+    #[serde(default)]
     disable_hmac_verify: bool,
 }
 
@@ -71,7 +72,7 @@ fn main() -> Result<(), Error> {
 
         let left = SecStr::from(format!("sha1={}", signature));
         let right = SecStr::from(auth.bytes().collect::<Vec<_>>());
-        assert!(left == right, "HMAC signature didn't match");
+        assert!(left == right, "HMAC signature didn't match",);
     }
 
     println!("gonna clone it to {:?}", config.outdir);

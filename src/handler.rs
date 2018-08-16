@@ -64,8 +64,8 @@ impl Handler {
                 "'{:?}' returned with a non-zero status code: {}\nstdout:\n{}\nstderr:\n{}",
                 self.exec,
                 output.status,
-                String::from_utf8(output.stdout).unwrap(),
-                String::from_utf8(output.stderr).unwrap()
+                String::from_utf8(output.stdout).unwrap_or_else(|_| String::new()),
+                String::from_utf8(output.stderr).unwrap_or_else(|_| String::new())
             )));
         }
         Ok(json!({}))
