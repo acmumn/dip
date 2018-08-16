@@ -20,6 +20,9 @@ pub enum Action {
 }
 
 impl Handler {
+    pub fn config(&self) -> &TomlValue {
+        &self.config
+    }
     pub fn from(config: &TomlValue) -> Result<Self, Error> {
         let handler = config
             .get("type")

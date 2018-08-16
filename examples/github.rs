@@ -36,6 +36,8 @@ struct Config {
     secret: String,
     #[serde(default)]
     disable_hmac_verify: bool,
+    #[serde(default = "default_path")]
+    path: PathBuf,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -52,6 +54,10 @@ struct RepositoryInfo {
 #[derive(Debug, Serialize, Deserialize)]
 struct GithubPayload {
     repository: RepositoryInfo,
+}
+
+fn default_path() -> PathBuf {
+    PathBuf::from(".")
 }
 
 fn main() -> Result<(), Error> {
@@ -86,8 +92,7 @@ fn main() -> Result<(), Error> {
 
     let payload: GithubPayload = serde_json::from_str(&payload.body)?;
     let mut target_path = PathBuf::from(env::var("DIP_WORKDIR")?);
-    target_path.push("repository");
-    println!("{:?}", &target_path);
+    target_path.push(&config.path);
     Command::new("git")
         .arg("clone")
         .arg(&payload.repository.clone_url)
