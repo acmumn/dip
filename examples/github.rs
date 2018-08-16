@@ -11,9 +11,11 @@ extern crate generic_array;
 extern crate structopt;
 
 use std::collections::HashMap;
+use std::env;
 use std::io::{self, Read};
 use std::iter::FromIterator;
 use std::path::PathBuf;
+use std::process::Command;
 
 use failure::{err_msg, Error};
 use generic_array::GenericArray;
@@ -32,7 +34,6 @@ struct Opt {
 #[derive(Debug, Serialize, Deserialize)]
 struct Config {
     secret: String,
-    outdir: PathBuf,
     #[serde(default)]
     disable_hmac_verify: bool,
 }
@@ -43,6 +44,16 @@ struct Payload {
     headers: HashMap<String, String>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct RepositoryInfo {
+    clone_url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct GithubPayload {
+    repository: RepositoryInfo,
+}
+
 fn main() -> Result<(), Error> {
     let args = Opt::from_args();
     let config: Config = serde_json::from_str(&args.config)?;
@@ -50,9 +61,7 @@ fn main() -> Result<(), Error> {
 
     let mut payload = String::new();
     io::stdin().read_to_string(&mut payload)?;
-    println!("raw payload: {}", payload);
     let payload: Payload = serde_json::from_str(&payload)?;
-    println!("processed payload: {}", payload.body);
 
     if !config.disable_hmac_verify {
         let secret = GenericArray::from_iter(config.secret.bytes());
@@ -75,6 +84,17 @@ fn main() -> Result<(), Error> {
         assert!(left == right, "HMAC signature didn't match",);
     }
 
-    println!("gonna clone it to {:?}", config.outdir);
+    let payload: GithubPayload = serde_json::from_str(&payload.body)?;
+    let mut target_path = PathBuf::from(env::var("DIP_WORKDIR")?);
+    target_path.push("repository");
+    println!("{:?}", &target_path);
+    Command::new("git")
+        .arg("clone")
+        .arg(&payload.repository.clone_url)
+        .arg("--recursive")
+        .arg("--depth")
+        .arg("1")
+        .arg(&target_path)
+        .output()?;
     Ok(())
 }

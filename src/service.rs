@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use futures::{future, Future, Stream};
 use hyper::{Body, Error, Request, Response, StatusCode};
+use mktemp::Temp;
 
 use {HOOKS, URIPATTERN};
 
@@ -51,26 +52,33 @@ pub fn dip_service(req: Request<Body>) -> Box<Future<Item = Response<Body>, Erro
                     "method": method,
                 });
         let hooks = HOOKS.lock().unwrap();
-        let hook = hooks.get(&name).unwrap();
-        let (code, msg) = hook.iter()
-            .fold(Ok(req_obj), |prev, handler| {
-                prev.and_then(|val| handler.run(val))
-            })
-            .map(|res| {
-                (
-                    StatusCode::ACCEPTED,
-                    format!(
-                        "stdout:\n{}\n\nstderr:\n{}",
-                        res.get("stdout").and_then(|v| v.as_str()).unwrap_or(""),
-                        res.get("stderr").and_then(|v| v.as_str()).unwrap_or(""),
-                    ),
-                )
-            })
-            .unwrap_or_else(|err| (StatusCode::BAD_REQUEST, format!("Error: {}", err)));
-        Response::builder()
-            .status(code)
-            .body(Body::from(msg))
-            .unwrap_or_else(|err| Response::new(Body::from(format!("{}", err))))
+        {
+            let mut temp_dir = Temp::new_dir().unwrap();
+            let temp_path = temp_dir.to_path_buf();
+            assert!(temp_path.exists());
+
+            let hook = hooks.get(&name).unwrap();
+            let (code, msg) = hook.iter()
+                .fold(Ok(req_obj), |prev, handler| {
+                    prev.and_then(|val| handler.run(&temp_path, val))
+                })
+                .map(|res| {
+                    (
+                        StatusCode::ACCEPTED,
+                        format!(
+                            "stdout:\n{}\n\nstderr:\n{}",
+                            res.get("stdout").and_then(|v| v.as_str()).unwrap_or(""),
+                            res.get("stderr").and_then(|v| v.as_str()).unwrap_or(""),
+                        ),
+                    )
+                })
+                .unwrap_or_else(|err| (StatusCode::BAD_REQUEST, format!("Error: {:?}", err)));
+            temp_dir.release();
+            Response::builder()
+                .status(code)
+                .body(Body::from(msg))
+                .unwrap_or_else(|err| Response::new(Body::from(format!("{}", err))))
+        }
     }))
 }
 

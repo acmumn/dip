@@ -40,6 +40,11 @@ impl Handler {
                 let program = programs
                     .get(handler)
                     .ok_or(err_msg(format!("'{}' is not a valid executable", handler)))
+                    .and_then(|value| {
+                        value
+                            .canonicalize()
+                            .map_err(|_| err_msg("failed to canonicalize the path"))
+                    })
                     .map(|value| value.clone())?;
                 Action::Exec(program)
             }
@@ -47,7 +52,8 @@ impl Handler {
         let config = config.clone();
         Ok(Handler { config, action })
     }
-    pub fn run(&self, input: JsonValue) -> Result<JsonValue, Error> {
+
+    pub fn run(&self, temp_path: &PathBuf, input: JsonValue) -> Result<JsonValue, Error> {
         let config = {
             let mut buf: Vec<u8> = Vec::new();
             {
@@ -61,7 +67,9 @@ impl Handler {
             Action::Command(ref cmd) => {
                 // TODO: allow some kind of simple variable replacement
                 let output = Command::new("/bin/bash")
+                    .current_dir(&temp_path)
                     .env("DIP_ROOT", "lol")
+                    .env("DIP_WORKDIR", temp_path)
                     .arg("-c")
                     .arg(cmd)
                     .output()?;
@@ -79,7 +87,9 @@ impl Handler {
             }
             Action::Exec(ref path) => {
                 let mut child = Command::new(&path)
+                    .current_dir(&temp_path)
                     .env("DIP_ROOT", "")
+                    .env("DIP_WORKDIR", temp_path)
                     .arg("--config")
                     .arg(config)
                     .stdin(Stdio::piped())
@@ -108,11 +118,12 @@ impl Handler {
                 output
             }
         };
+
         let stdout = String::from_utf8(output.stdout).unwrap_or_else(|_| String::new());
         let stderr = String::from_utf8(output.stderr).unwrap_or_else(|_| String::new());
         Ok(json!({
-            "stdout": stdout,
-            "stderr": stderr,
-        }))
+                "stdout": stdout,
+                "stderr": stderr,
+            }))
     }
 }
