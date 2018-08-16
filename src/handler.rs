@@ -57,7 +57,7 @@ impl Handler {
             String::from_utf8(buf).unwrap()
         };
 
-        match &self.action {
+        let output = match &self.action {
             Action::Command(ref cmd) => {
                 // TODO: allow some kind of simple variable replacement
                 let output = Command::new("/bin/bash")
@@ -75,6 +75,7 @@ impl Handler {
                         String::from_utf8(output.stderr).unwrap_or_else(|_| String::new())
                     )));
                 }
+                output
             }
             Action::Exec(ref path) => {
                 let mut child = Command::new(&path)
@@ -104,8 +105,14 @@ impl Handler {
                         String::from_utf8(output.stderr).unwrap_or_else(|_| String::new())
                     )));
                 }
+                output
             }
         };
-        Ok(json!({}))
+        let stdout = String::from_utf8(output.stdout).unwrap_or_else(|_| String::new());
+        let stderr = String::from_utf8(output.stderr).unwrap_or_else(|_| String::new());
+        Ok(json!({
+            "stdout": stdout,
+            "stderr": stderr,
+        }))
     }
 }

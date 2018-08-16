@@ -56,7 +56,16 @@ pub fn dip_service(req: Request<Body>) -> Box<Future<Item = Response<Body>, Erro
             .fold(Ok(req_obj), |prev, handler| {
                 prev.and_then(|val| handler.run(val))
             })
-            .map(|_| (StatusCode::ACCEPTED, "success".to_owned()))
+            .map(|res| {
+                (
+                    StatusCode::ACCEPTED,
+                    format!(
+                        "stdout:\n{}\n\nstderr:\n{}",
+                        res.get("stdout").and_then(|v| v.as_str()).unwrap_or(""),
+                        res.get("stderr").and_then(|v| v.as_str()).unwrap_or(""),
+                    ),
+                )
+            })
             .unwrap_or_else(|err| (StatusCode::BAD_REQUEST, format!("Error: {}", err)));
         Response::builder()
             .status(code)
