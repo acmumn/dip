@@ -10,6 +10,7 @@ extern crate failure;
 #[macro_use]
 extern crate structopt;
 
+use std::iter::FromIterator;
 use std::io::{self, Read};
 use std::collections::HashMap;
 
@@ -45,11 +46,13 @@ fn main() -> Result<(), Error> {
     let mut payload = String::new();
     io::stdin().read_to_string(&mut payload)?;
     let payload: Payload = serde_json::from_str(&payload)?;
+    println!("secret = {}", config.secret);
 
-    let secret = GenericArray::from_slice(config.secret.as_bytes());
-    let mut mac = Hmac::<Sha1>::new(secret);
+    let secret = GenericArray::from_iter(config.secret.bytes());
+    let mut mac = Hmac::<Sha1>::new(&secret);
     mac.input(payload.body.as_bytes());
     let signature = mac.result().code().into_iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join("");
+    println!("sig = {}", signature);
     
     let auth = payload.headers.get("X-Hub-Signature").ok_or(err_msg("Missing auth header"))?;
 
