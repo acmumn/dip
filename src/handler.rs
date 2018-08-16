@@ -11,7 +11,12 @@ use PROGRAMS;
 
 pub struct Handler {
     config: TomlValue,
-    exec: PathBuf,
+    program: Program,
+}
+
+pub enum Program {
+    Command(String),
+    Exec(PathBuf),
 }
 
 impl Handler {
@@ -21,15 +26,26 @@ impl Handler {
             .ok_or(err_msg("No 'type' found."))?
             .as_str()
             .ok_or(err_msg("'type' is not a string."))?;
-        let exec = {
-            let programs = PROGRAMS.lock().unwrap();
-            programs
-                .get(handler)
-                .ok_or(err_msg(format!("'{}' is not a valid executable", handler)))
-                .map(|value| value.clone())?
+        let program = match handler {
+            "script" => {
+                let command = config
+                    .get("command")
+                    .ok_or(err_msg("No 'command' found"))?
+                    .as_str()
+                    .ok_or(err_msg("'command' is not a string."))?;
+                Program::Command(command.to_owned())
+            }
+            handler => {
+                let programs = PROGRAMS.lock().unwrap();
+                let program = programs
+                    .get(handler)
+                    .ok_or(err_msg(format!("'{}' is not a valid executable", handler)))
+                    .map(|value| value.clone())?;
+                Program::Exec(program)
+            }
         };
         let config = config.clone();
-        Ok(Handler { config, exec })
+        Ok(Handler { config, program })
     }
     pub fn run(&self, input: JsonValue) -> Result<JsonValue, Error> {
         let config = {
@@ -41,33 +57,51 @@ impl Handler {
             String::from_utf8(buf).unwrap()
         };
 
-        let mut child = Command::new(&self.exec)
-            .env("DIP_ROOT", "")
-            .arg("--config")
-            .arg(config)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-        {
-            match child.stdin {
-                Some(ref mut stdin) => {
-                    write!(stdin, "{}", input)?;
+        match &self.program {
+            Program::Command(ref cmd) => {
+                // TODO: allow some kind of simple variable replacement
+                let output = Command::new("/bin/bash").arg("-c").arg(cmd).output()?;
+                if !output.status.success() {
+                    // TODO: get rid of unwraps
+                    return Err(err_msg(format!(
+                        "Command '{}' returned with a non-zero status code: {}\nstdout:\n{}\nstderr:\n{}",
+                        cmd,
+                        output.status,
+                        String::from_utf8(output.stdout).unwrap_or_else(|_| String::new()),
+                        String::from_utf8(output.stderr).unwrap_or_else(|_| String::new())
+                    )));
                 }
-                None => bail!("done fucked"),
-            };
-        }
-        let output = child.wait_with_output()?;
-        if !output.status.success() {
-            // TODO: get rid of unwraps
-            return Err(err_msg(format!(
-                "'{:?}' returned with a non-zero status code: {}\nstdout:\n{}\nstderr:\n{}",
-                self.exec,
-                output.status,
-                String::from_utf8(output.stdout).unwrap_or_else(|_| String::new()),
-                String::from_utf8(output.stderr).unwrap_or_else(|_| String::new())
-            )));
-        }
+            }
+            Program::Exec(ref path) => {
+                let mut child = Command::new(&path)
+                    .env("DIP_ROOT", "")
+                    .arg("--config")
+                    .arg(config)
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()?;
+                {
+                    match child.stdin {
+                        Some(ref mut stdin) => {
+                            write!(stdin, "{}", input)?;
+                        }
+                        None => bail!("done fucked"),
+                    };
+                }
+                let output = child.wait_with_output()?;
+                if !output.status.success() {
+                    // TODO: get rid of unwraps
+                    return Err(err_msg(format!(
+                        "'{:?}' returned with a non-zero status code: {}\nstdout:\n{}\nstderr:\n{}",
+                        path,
+                        output.status,
+                        String::from_utf8(output.stdout).unwrap_or_else(|_| String::new()),
+                        String::from_utf8(output.stderr).unwrap_or_else(|_| String::new())
+                    )));
+                }
+            }
+        };
         Ok(json!({}))
     }
 }
