@@ -1,0 +1,18 @@
+language: rust
+sudo: false
+
+rust:
+  - stable
+  - beta
+  - nightly
+os: linux
+matrix:
+  fast_finish: true
+
+cache:
+  - ~/.cargo
+
+script:
+  - cargo test --all
+  - cargo build --release --all
+
