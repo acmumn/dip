@@ -10,6 +10,8 @@ extern crate serde_json;
 #[macro_use]
 extern crate lazy_static;
 extern crate notify;
+#[macro_use]
+extern crate structopt;
 extern crate regex;
 extern crate toml;
 extern crate walkdir;
