@@ -1,24 +1,24 @@
 extern crate dip;
+extern crate hmac;
 extern crate secstr;
 extern crate serde_json;
-extern crate hmac;
 extern crate sha1;
 #[macro_use]
 extern crate serde_derive;
-extern crate generic_array;
 extern crate failure;
+extern crate generic_array;
 #[macro_use]
 extern crate structopt;
 
-use std::iter::FromIterator;
-use std::io::{self, Read};
 use std::collections::HashMap;
+use std::io::{self, Read};
+use std::iter::FromIterator;
 
-use secstr::*;
-use hmac::{Mac,Hmac};
-use sha1::Sha1;
-use generic_array::GenericArray;
 use failure::{err_msg, Error};
+use generic_array::GenericArray;
+use hmac::{Hmac, Mac};
+use secstr::*;
+use sha1::Sha1;
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -51,10 +51,19 @@ fn main() -> Result<(), Error> {
     let secret = GenericArray::from_iter(config.secret.bytes());
     let mut mac = Hmac::<Sha1>::new(&secret);
     mac.input(payload.body.as_bytes());
-    let signature = mac.result().code().into_iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join("");
+    let signature = mac
+        .result()
+        .code()
+        .into_iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<Vec<_>>()
+        .join("");
     println!("sig = {}", signature);
-    
-    let auth = payload.headers.get("X-Hub-Signature").ok_or(err_msg("Missing auth header"))?;
+
+    let auth = payload
+        .headers
+        .get("X-Hub-Signature")
+        .ok_or(err_msg("Missing auth header"))?;
 
     let left = SecStr::from(format!("sha1={}", signature));
     let right = SecStr::from(auth.bytes().collect::<Vec<_>>());
