@@ -14,5 +14,16 @@ cache:
 
 script:
   - cargo test --all
+before_deploy:
   - cargo build --release --all
+
+deploy:
+  - provider: releases
+    api_key: $AUTH_TOKEN
+    file:
+      - target/release/dip
+    on:
+      condition: $TRAVIS_RUST_VERSION = stable
+      tags: true
+    skip_cleanup: true
 
