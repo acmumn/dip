@@ -119,6 +119,7 @@ where
             }
         }
     }
+    println!("Done loading config.");
 }
 
 fn watch<P>(root: P) -> notify::Result<()>
