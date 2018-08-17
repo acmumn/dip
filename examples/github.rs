@@ -11,9 +11,11 @@ extern crate generic_array;
 extern crate structopt;
 
 use std::collections::HashMap;
+use std::env;
 use std::io::{self, Read};
 use std::iter::FromIterator;
 use std::path::PathBuf;
+use std::process::Command;
 
 use failure::{err_msg, Error};
 use generic_array::GenericArray;
@@ -29,10 +31,13 @@ struct Opt {
     pub config: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct Config {
     secret: String,
-    outdir: PathBuf,
+    #[serde(default)]
+    disable_hmac_verify: bool,
+    #[serde(default = "default_path")]
+    path: PathBuf,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -41,36 +46,60 @@ struct Payload {
     headers: HashMap<String, String>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct RepositoryInfo {
+    clone_url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct GithubPayload {
+    repository: RepositoryInfo,
+}
+
+fn default_path() -> PathBuf {
+    PathBuf::from(".")
+}
+
 fn main() -> Result<(), Error> {
     let args = Opt::from_args();
     let config: Config = serde_json::from_str(&args.config)?;
+    println!("{:?}", config);
 
     let mut payload = String::new();
     io::stdin().read_to_string(&mut payload)?;
-    println!("raw payload: {}", payload);
     let payload: Payload = serde_json::from_str(&payload)?;
-    println!("processed payload: {}", payload.body);
 
-    let secret = GenericArray::from_iter(config.secret.bytes());
-    let mut mac = Hmac::<Sha1>::new(&secret);
-    mac.input(payload.body.as_bytes());
-    let signature = mac
-        .result()
-        .code()
-        .into_iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<Vec<_>>()
-        .join("");
+    if !config.disable_hmac_verify {
+        let secret = GenericArray::from_iter(config.secret.bytes());
+        let mut mac = Hmac::<Sha1>::new(&secret);
+        mac.input(payload.body.as_bytes());
+        let signature = mac.result()
+            .code()
+            .into_iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<Vec<_>>()
+            .join("");
 
-    let auth = payload
-        .headers
-        .get("x-hub-signature")
-        .ok_or(err_msg("Missing auth header"))?;
+        let auth = payload
+            .headers
+            .get("x-hub-signature")
+            .ok_or(err_msg("Missing auth header"))?;
 
-    let left = SecStr::from(format!("sha1={}", signature));
-    let right = SecStr::from(auth.bytes().collect::<Vec<_>>());
-    assert!(left == right, "HMAC signature didn't match");
+        let left = SecStr::from(format!("sha1={}", signature));
+        let right = SecStr::from(auth.bytes().collect::<Vec<_>>());
+        assert!(left == right, "HMAC signature didn't match",);
+    }
 
-    println!("gonna clone it to {:?}", config.outdir);
+    let payload: GithubPayload = serde_json::from_str(&payload.body)?;
+    let mut target_path = PathBuf::from(env::var("DIP_WORKDIR")?);
+    target_path.push(&config.path);
+    Command::new("git")
+        .arg("clone")
+        .arg(&payload.repository.clone_url)
+        .arg("--recursive")
+        .arg("--depth")
+        .arg("1")
+        .arg(&target_path)
+        .output()?;
     Ok(())
 }
