@@ -60,7 +60,10 @@ pub fn dip_service(req: Request<Body>) -> Box<Future<Item = Response<Body>, Erro
                 assert!(temp_path.exists());
 
                 let hook = hooks.get(&name).unwrap();
-                let (code, msg) = hook.handle(req_obj, &temp_path).unwrap();
+                let (code, msg) = match hook.handle(req_obj, &temp_path) {
+                    Ok(msg) => (StatusCode::ACCEPTED, msg),
+                    Err(msg) => (StatusCode::BAD_REQUEST, msg),
+                };
 
                 temp_dir.release();
                 Response::builder()

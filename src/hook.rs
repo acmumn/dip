@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 use std::slice::Iter;
 
 use failure::{err_msg, Error};
-use hyper::StatusCode;
+use futures::{future, Future};
 use serde_json::Value as JsonValue;
+use tokio::{self, prelude::*};
 use toml::Value;
 
 use Handler;
@@ -49,20 +50,18 @@ impl Hook {
     pub fn get_name(&self) -> String {
         self.name.clone()
     }
-    pub fn iter(&self) -> Iter<Handler> {
-        self.handlers.iter()
-    }
-    pub fn handle(
-        &self,
-        req: JsonValue,
-        temp_path: &PathBuf,
-    ) -> Result<(StatusCode, String), Error> {
+    pub fn handle(&self, req: JsonValue, temp_path: &PathBuf) -> Result<String, String> {
+        let fut = self.handlers.iter().fold(future::ok(req), |prev, handler| {
+            prev.and_then(|val| handler.run(temp_path, val))
+        });
+        tokio::executor::spawn(fut.and_then(|_| future::ok(())));
+        Ok("success".to_owned())
+        /*
         Ok(self.iter()
             .fold(Ok(req), |prev, handler| {
                 prev.and_then(|val| {
                     println!("Running {}...", handler.config());
                     let result = handler.run(&temp_path, val);
-                    println!("{:?}", result);
                     result
                 })
             })
@@ -77,5 +76,6 @@ impl Hook {
                 )
             })
             .unwrap_or_else(|err| (StatusCode::BAD_REQUEST, format!("Error: {:?}", err))))
+            */
     }
 }

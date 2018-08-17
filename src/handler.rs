@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use failure::{err_msg, Error};
+use futures::{future, Future};
 use serde::Serialize;
 use serde_json::{Serializer as JsonSerializer, Value as JsonValue};
 use toml::Value as TomlValue;
@@ -56,12 +57,16 @@ impl Handler {
         Ok(Handler { config, action })
     }
 
-    pub fn run(&self, temp_path: &PathBuf, input: JsonValue) -> Result<JsonValue, Error> {
+    pub fn run(
+        &self,
+        temp_path: &PathBuf,
+        input: JsonValue,
+    ) -> impl Future<Item = JsonValue, Error = Error> {
         let config = {
             let mut buf: Vec<u8> = Vec::new();
             {
                 let mut serializer = JsonSerializer::new(&mut buf);
-                TomlValue::serialize(&self.config, &mut serializer)?;
+                TomlValue::serialize(&self.config, &mut serializer);
             }
             String::from_utf8(buf).unwrap()
         };
@@ -78,11 +83,12 @@ impl Handler {
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
-                    .spawn()?;
-                let output = child.wait_with_output()?;
+                    .spawn()
+                    .unwrap();
+                let output = child.wait_with_output().unwrap();
                 if !output.status.success() {
                     // TODO: get rid of unwraps
-                    return Err(err_msg(format!(
+                    return future::err(err_msg(format!(
                         "Command '{}' returned with a non-zero status code: {}\nstdout:\n{}\nstderr:\n{}",
                         cmd,
                         output.status,
@@ -102,19 +108,20 @@ impl Handler {
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
-                    .spawn()?;
+                    .spawn()
+                    .unwrap();
                 {
                     match child.stdin {
                         Some(ref mut stdin) => {
-                            write!(stdin, "{}", input)?;
+                            write!(stdin, "{}", input);
                         }
-                        None => bail!("done fucked"),
+                        None => return future::err(err_msg("done fucked")),
                     };
                 }
-                let output = child.wait_with_output()?;
+                let output = child.wait_with_output().unwrap();
                 if !output.status.success() {
                     // TODO: get rid of unwraps
-                    return Err(err_msg(format!(
+                    return future::err(err_msg(format!(
                         "'{:?}' returned with a non-zero status code: {}\nstdout:\n{}\nstderr:\n{}",
                         path,
                         output.status,
@@ -128,9 +135,9 @@ impl Handler {
 
         let stdout = String::from_utf8(output.stdout).unwrap_or_else(|_| String::new());
         let stderr = String::from_utf8(output.stderr).unwrap_or_else(|_| String::new());
-        Ok(json!({
-                "stdout": stdout,
-                "stderr": stderr,
-            }))
+        future::ok(json!({
+            "stdout": stdout,
+            "stderr": stderr,
+        }))
     }
 }
