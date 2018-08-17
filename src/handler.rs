@@ -59,9 +59,9 @@ impl Handler {
 
     pub fn run(
         &self,
-        temp_path: &PathBuf,
+        temp_path: PathBuf,
         input: JsonValue,
-    ) -> impl Future<Item = JsonValue, Error = Error> {
+    ) -> impl Future<Item = (PathBuf, JsonValue), Error = Error> {
         let config = {
             let mut buf: Vec<u8> = Vec::new();
             {
@@ -135,9 +135,12 @@ impl Handler {
 
         let stdout = String::from_utf8(output.stdout).unwrap_or_else(|_| String::new());
         let stderr = String::from_utf8(output.stderr).unwrap_or_else(|_| String::new());
-        future::ok(json!({
+        future::ok((
+            temp_path,
+            json!({
             "stdout": stdout,
             "stderr": stderr,
-        }))
+        }),
+        ))
     }
 }

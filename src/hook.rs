@@ -2,9 +2,11 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::slice::Iter;
+use std::sync::Arc;
 
 use failure::{err_msg, Error};
-use futures::{future, Future};
+use futures::{future, stream, Future};
+use owning_ref::BoxRef;
 use serde_json::Value as JsonValue;
 use tokio::{self, prelude::*};
 use toml::Value;
@@ -13,20 +15,20 @@ use Handler;
 
 pub struct Hook {
     name: String,
-    handlers: Vec<Handler>,
+    handlers: Arc<Vec<Handler>>,
 }
 
 impl Hook {
     pub fn from(name: impl Into<String>, config: &Value) -> Result<Self, Error> {
         let name = name.into();
-        let handlers = config
+        let handlers = Arc::new(config
             .get("handlers")
             .ok_or(err_msg("No 'handlers' found."))?
             .as_array()
             .ok_or(err_msg("'handlers' is not an array."))?
             .iter()
             .map(|value: &Value| Handler::from(value))
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?);
         Ok(Hook { name, handlers })
     }
     pub fn from_file<P>(path: P) -> Result<Hook, Error>
@@ -50,11 +52,18 @@ impl Hook {
     pub fn get_name(&self) -> String {
         self.name.clone()
     }
-    pub fn handle(&self, req: JsonValue, temp_path: &PathBuf) -> Result<String, String> {
-        let fut = self.handlers.iter().fold(future::ok(req), |prev, handler| {
-            prev.and_then(|val| handler.run(temp_path, val))
+    pub fn handle(&self, req: JsonValue, temp_path: PathBuf) -> Result<String, String> {
+        let h = self.handlers.clone();
+        let it = h.iter();
+        let s = stream::iter_ok(it).fold((temp_path, req), move |prev, handler| {
+            let (path, prev) = prev;
+            handler.run(path, prev)
         });
-        tokio::executor::spawn(fut.and_then(|_| future::ok(())));
+        /*.fold(future::ok(req), |prev, handler| {
+            prev.and_then(|val| handler.run(temp_path, val))
+        });*/
+        let s = s.map(|_| ()).map_err(|_: Error| ());
+        tokio::executor::spawn(s);
         Ok("success".to_owned())
         /*
         Ok(self.iter()

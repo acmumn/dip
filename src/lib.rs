@@ -5,6 +5,7 @@ extern crate failure;
 extern crate futures;
 extern crate hyper;
 extern crate mktemp;
+extern crate owning_ref;
 extern crate serde;
 extern crate tokio;
 #[macro_use]
