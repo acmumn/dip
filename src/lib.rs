@@ -8,6 +8,7 @@ extern crate mktemp;
 extern crate owning_ref;
 extern crate serde;
 extern crate tokio;
+extern crate tokio_process;
 #[macro_use]
 extern crate serde_json;
 #[macro_use]
@@ -48,7 +49,8 @@ const URIPATTERN_STR: &str = r"/webhook/(?P<name>[A-Za-z._][A-Za-z0-9._]*)";
 
 lazy_static! {
     static ref URIPATTERN: Regex = Regex::new(URIPATTERN_STR).unwrap();
-    // static ref HANDLERS: Mutex<HashMap<String, Box<Handler>>> = Mutex::new(HashMap::new());
+    static ref HANDLERS: Arc<Mutex<HashMap<String, Handler>>> =
+        Arc::new(Mutex::new(HashMap::new()));
     static ref PROGRAMS: Mutex<HashMap<String, PathBuf>> = Mutex::new(HashMap::new());
     static ref HOOKS: Arc<Mutex<HashMap<String, Hook>>> = Arc::new(Mutex::new(HashMap::new()));
 }

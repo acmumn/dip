@@ -6,36 +6,37 @@ use std::sync::Arc;
 
 use failure::{err_msg, Error};
 use futures::{future, stream, Future};
-use owning_ref::BoxRef;
 use serde_json::Value as JsonValue;
 use tokio::{self, prelude::*};
 use toml::Value;
 
 use Handler;
+use HANDLERS;
 
 pub struct Hook {
     name: String,
-    handlers: Arc<Vec<Handler>>,
+    handlers: Vec<Handler>,
 }
 
 impl Hook {
     pub fn from(name: impl Into<String>, config: &Value) -> Result<Self, Error> {
         let name = name.into();
-        let handlers = Arc::new(config
+        let handlers = config
             .get("handlers")
             .ok_or(err_msg("No 'handlers' found."))?
             .as_array()
             .ok_or(err_msg("'handlers' is not an array."))?
             .iter()
             .map(|value: &Value| Handler::from(value))
-            .collect::<Result<Vec<_>, _>>()?);
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Hook { name, handlers })
     }
     pub fn from_file<P>(path: P) -> Result<Hook, Error>
     where
         P: AsRef<Path>,
     {
-        let filename = path.as_ref()
+        let filename = path
+            .as_ref()
             .file_name()
             .ok_or(err_msg("what the fuck bro"))?
             .to_str()
@@ -53,18 +54,35 @@ impl Hook {
         self.name.clone()
     }
     pub fn handle(&self, req: JsonValue, temp_path: PathBuf) -> Result<String, String> {
-        let h = self.handlers.clone();
-        let it = h.iter();
-        let s = stream::iter_ok(it).fold((temp_path, req), move |prev, handler| {
-            let (path, prev) = prev;
-            handler.run(path, prev)
-        });
-        /*.fold(future::ok(req), |prev, handler| {
-            prev.and_then(|val| handler.run(temp_path, val))
-        });*/
-        let s = s.map(|_| ()).map_err(|_: Error| ());
-        tokio::executor::spawn(s);
+        let handlers = self
+            .handlers
+            .iter()
+            .map(|handler| (handler.config.clone(), handler.action.clone()))
+            .collect::<Vec<_>>();
+        let st = stream::iter_ok::<_, Error>(handlers.into_iter())
+            .fold((temp_path, req), |(path, prev), (config, action)| {
+                println!("executing in {:?}", &path);
+                Handler::run(config, action, path, prev)
+            }).map(|_| ())
+            .map_err(|_: Error| ());
+        tokio::executor::spawn(st);
+        // let it = stream::iter_ok::<_, Error>(handlers.iter());
+        // let s = it.fold((temp_path, req), move |(path, prev), handler| {
+        //     let result = handler.run(path.clone(), prev.clone());
+        //     result
+        // }).map(|_|()).map_err(|_| ());
+        // tokio::executor::spawn(s);
         Ok("success".to_owned())
+        // let s = stream::iter_ok(self.handlers.iter()).fold((temp_path, req), move |prev, handler| {
+        //     let (path, prev) = prev;
+        //     handler.run(path, prev)
+        // });
+        // .fold(future::ok(req), |prev, handler| {
+        //     prev.and_then(|val| handler.run(temp_path, val))
+        // });
+        // let s = s.map(|_| ()).map_err(|_: Error| ());
+        // tokio::executor::spawn(s);
+        // Ok("success".to_owned())
         /*
         Ok(self.iter()
             .fold(Ok(req), |prev, handler| {
@@ -85,6 +103,5 @@ impl Hook {
                 )
             })
             .unwrap_or_else(|err| (StatusCode::BAD_REQUEST, format!("Error: {:?}", err))))
-            */
-    }
+            */    }
 }

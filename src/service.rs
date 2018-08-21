@@ -34,51 +34,41 @@ pub fn dip_service(req: Request<Body>) -> Box<Future<Item = Response<Body>, Erro
 
     // TODO: filter by method as well
 
-    let headers = req.headers()
+    let headers = req
+        .headers()
         .clone()
         .into_iter()
         .filter_map(|(k, v)| {
             let key = k.unwrap().as_str().to_owned();
             v.to_str().map(|value| (key, value.to_owned())).ok()
-        })
-        .collect::<HashMap<_, _>>();
+        }).collect::<HashMap<_, _>>();
     let method = req.method().as_str().to_owned();
 
     // spawn job
-    thread::spawn(move || {
-        req.into_body().concat2().map(move |body| {
-            let body = String::from_utf8(body.to_vec()).unwrap();
-            let req_obj = json!({
-                "body": body, 
-                "headers": headers,
-                "method": method,
-            });
-            let hooks = HOOKS.lock().unwrap();
-            {
-                let mut temp_dir = Temp::new_dir().unwrap();
-                let temp_path = temp_dir.to_path_buf();
-                assert!(temp_path.exists());
+    Box::new(req.into_body().concat2().map(move |body| {
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        let req_obj = json!({
+            "body": body, 
+            "headers": headers,
+            "method": method,
+        });
+        let hooks = HOOKS.lock().unwrap();
+        {
+            let mut temp_dir = Temp::new_dir().unwrap();
+            let temp_path = temp_dir.to_path_buf();
+            assert!(temp_path.exists());
 
-                let hook = hooks.get(&name).unwrap();
-                let (code, msg) = match hook.handle(req_obj, temp_path) {
-                    Ok(msg) => (StatusCode::ACCEPTED, msg),
-                    Err(msg) => (StatusCode::BAD_REQUEST, msg),
-                };
+            let hook = hooks.get(&name).unwrap();
+            let (code, msg) = match hook.handle(req_obj, temp_path) {
+                Ok(msg) => (StatusCode::ACCEPTED, msg),
+                Err(msg) => (StatusCode::BAD_REQUEST, msg),
+            };
 
-                temp_dir.release();
-                Response::builder()
-                    .status(code)
-                    .body(Body::from(msg))
-                    .unwrap_or_else(|err| Response::new(Body::from(format!("{}", err))))
-            }
-        })
-    });
-
-    Box::new(future::ok(
-        Response::builder()
-            .status(StatusCode::ACCEPTED)
-            // TODO: assign job a uuid and do some logging
-            .body(Body::from(format!("job {} started", -1)))
-            .unwrap(),
-    ))
+            temp_dir.release();
+            Response::builder()
+                .status(code)
+                .body(Body::from(msg))
+                .unwrap_or_else(|err| Response::new(Body::from(format!("{}", err))))
+        }
+    }))
 }
