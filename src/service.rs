@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::thread;
 
 use futures::{future, Future, Stream};
 use hyper::{Body, Error, Request, Response, StatusCode};

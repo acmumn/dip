@@ -1,14 +1,15 @@
-use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Stdio};
 
 use failure::{err_msg, Error};
 use futures::{
-    future::{self, FutureResult},
+    future::{self, Either, FutureResult},
+    sink::Sink,
     Future,
 };
 use serde::Serialize;
 use serde_json::{Serializer as JsonSerializer, Value as JsonValue};
+use tokio::io::write_all;
 use tokio_process::CommandExt;
 use toml::Value as TomlValue;
 
@@ -113,39 +114,72 @@ impl Handler {
                     .env("DIP_WORKDIR", &temp_path)
                     .arg("--config")
                     .arg(config)
-                    .stdin(Stdio::piped()) 
+                    .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
                     .spawn_async()
                     .expect("could not spawn child");
-                match child.stdin() {
-                    Some(ref mut stdin) => {
-                        println!("writing input: '{}'", input);
-                        write!(stdin, "{}", input);
-                    }
-                    None => (),
-                };
-                let result = child
-                    .wait_with_output()
-                    .and_then(|output| {
-                        if output.status.success() {
-                            future::ok(output)
-                        } else {
-                            // TODO: change this
-                            future::ok(output)
-                        }
-                    }).map(|output| {
+
+                let stdin = child.stdin().take().unwrap();
+
+                let input = format!("{}", input);
+                let result = write_all(stdin, input)
+                    .and_then(|_| child.wait_with_output())
+                    .map(|output| {
                         let stdout =
                             String::from_utf8(output.stdout).unwrap_or_else(|_| String::new());
                         let stderr =
                             String::from_utf8(output.stderr).unwrap_or_else(|_| String::new());
-                        println!("stdout: {}, stderr: {}", stdout, stderr);
                         json!({
-                            "stdout": stdout,
-                            "stderr": stderr,
-                        })
-                    }).map_err(|err| err_msg(format!("could not get output: {}", err)));
+                        "stdout": stdout,
+                        "stderr": stderr,
+                    })
+                    }).map_err(|err| err_msg(format!("error: {}", err)));
+
+                // let _result: Either<_, FutureResult<(), Error>> = {
+                //     match child.stdin() {
+                //         Some(ref mut stdin) => Either::A(write_all(stdin, input.as_bytes())),
+                //         None => Either::B(future::err(err_msg("rip"))),
+                //     }
+                // };
                 Box::new(result)
+
+                // let input_s = format!("{}", input);
+                // let result: Box<Future<Item = (), Error = Error> + Send> = {
+                //     let rf = child.clone().lock().unwrap();
+                //     match rf.stdin() {
+                //         Some(ref mut stdin) => Box::new(
+                //             write_all(stdin, input_s.as_bytes())
+                //                 .map(|_| ())
+                //                 .map_err(|err| err_msg(format!("error: {}", err))),
+                //         ),
+                //         None => Box::new(future::err(err_msg("Failed to acquire child stdin"))),
+                //     }
+                // };
+                // {
+                //         let rf = child.clone().lock().unwrap();
+                //         let result = rf
+                //             .wait_with_output()
+                //             .and_then(|output| {
+                //                 if output.status.success() {
+                //                     future::ok(output)
+                //                 } else {
+                //                     // TODO: change this
+                //                     future::ok(output)
+                //                 }
+                //             }).map(|output| {
+                //                 let stdout = String::from_utf8(output.stdout)
+                //                     .unwrap_or_else(|_| String::new());
+                //                 let stderr = String::from_utf8(output.stderr)
+                //                     .unwrap_or_else(|_| String::new());
+                //                 println!("stdout: {}, stderr: {}", stdout, stderr);
+                //                 json!({
+                //                                 "stdout": stdout,
+                //                                 "stderr": stderr,
+                //                             })
+                //             }).map_err(|err| err_msg(format!("could not get output: {}", err)));
+                //     });
+
                 // .and_then(move |output| {
                 //     if output.status.success() {
                 //         future::ok(output)

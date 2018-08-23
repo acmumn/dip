@@ -1,6 +1,5 @@
 //! # Dip
 
-#[macro_use]
 extern crate failure;
 extern crate futures;
 extern crate hyper;
@@ -55,8 +54,6 @@ lazy_static! {
     static ref HOOKS: Arc<Mutex<HashMap<String, Hook>>> = Arc::new(Mutex::new(HashMap::new()));
 }
 
-// const NOTFOUND: &str = "<html> <head> <style> * { font-family: sans-serif; } body { padding: 20px 60px; } </style> </head> <body> <h1>Looks like you took a wrong turn!</h1> <p>There's nothing to see here.</p> </body> </html>";
-
 fn watch<P>(root: P) -> notify::Result<()>
 where
     P: AsRef<Path>,
@@ -72,7 +69,7 @@ where
                 // TODO: don't do this
                 config::load_config(root.as_ref())
             }
-            Err(e) => println!("watch error: {:?}", e),
+            Err(e) => eprintln!("watch error: {:?}", e),
         }
     }
 }

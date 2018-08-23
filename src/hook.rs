@@ -1,17 +1,14 @@
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::slice::Iter;
-use std::sync::Arc;
 
 use failure::{err_msg, Error};
-use futures::{future, stream, Future};
+use futures::{stream, Future};
 use serde_json::Value as JsonValue;
 use tokio::{self, prelude::*};
 use toml::Value;
 
 use Handler;
-use HANDLERS;
 
 pub struct Hook {
     name: String,

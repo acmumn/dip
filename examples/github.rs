@@ -17,7 +17,7 @@ use std::iter::FromIterator;
 use std::path::PathBuf;
 use std::process::Command;
 
-use failure::{err_msg, Error};
+use failure::err_msg;
 use generic_array::GenericArray;
 use hmac::{Hmac, Mac};
 use secstr::*;
@@ -63,7 +63,6 @@ fn default_path() -> PathBuf {
 fn main() {
     let args = Opt::from_args();
     let config: Config = serde_json::from_str(&args.config).expect("Could not parse config.");
-    println!("{:?}", config);
 
     let mut payload = String::new();
     io::stdin()
@@ -71,6 +70,7 @@ fn main() {
         .expect("Could not read from stdin");
     let payload: Payload = serde_json::from_str(&payload)
         .expect(&format!("Could not parse stdin into json: '{}'", payload));
+    println!("Read body: '{}'", payload.body);
 
     if !config.disable_hmac_verify {
         let secret = GenericArray::from_iter(config.secret.bytes());
