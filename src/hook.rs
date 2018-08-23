@@ -58,47 +58,12 @@ impl Hook {
             .collect::<Vec<_>>();
         let st = stream::iter_ok::<_, Error>(handlers.into_iter())
             .fold((temp_path, req), |(path, prev), (config, action)| {
-                println!("executing in {:?}", &path);
                 Handler::run(config, action, path, prev)
             }).map(|_| ())
-            .map_err(|_: Error| ());
+            .map_err(|err: Error| {
+                println!("Error from stream: {}", err);
+            });
         tokio::executor::spawn(st);
-        // let it = stream::iter_ok::<_, Error>(handlers.iter());
-        // let s = it.fold((temp_path, req), move |(path, prev), handler| {
-        //     let result = handler.run(path.clone(), prev.clone());
-        //     result
-        // }).map(|_|()).map_err(|_| ());
-        // tokio::executor::spawn(s);
         Ok("success".to_owned())
-        // let s = stream::iter_ok(self.handlers.iter()).fold((temp_path, req), move |prev, handler| {
-        //     let (path, prev) = prev;
-        //     handler.run(path, prev)
-        // });
-        // .fold(future::ok(req), |prev, handler| {
-        //     prev.and_then(|val| handler.run(temp_path, val))
-        // });
-        // let s = s.map(|_| ()).map_err(|_: Error| ());
-        // tokio::executor::spawn(s);
-        // Ok("success".to_owned())
-        /*
-        Ok(self.iter()
-            .fold(Ok(req), |prev, handler| {
-                prev.and_then(|val| {
-                    println!("Running {}...", handler.config());
-                    let result = handler.run(&temp_path, val);
-                    result
-                })
-            })
-            .map(|res| {
-                (
-                    StatusCode::ACCEPTED,
-                    format!(
-                        "stdout:\n{}\n\nstderr:\n{}",
-                        res.get("stdout").and_then(|v| v.as_str()).unwrap_or(""),
-                        res.get("stderr").and_then(|v| v.as_str()).unwrap_or(""),
-                    ),
-                )
-            })
-            .unwrap_or_else(|err| (StatusCode::BAD_REQUEST, format!("Error: {:?}", err))))
-            */    }
+    }
 }

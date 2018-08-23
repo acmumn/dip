@@ -70,7 +70,6 @@ fn main() {
         .expect("Could not read from stdin");
     let payload: Payload = serde_json::from_str(&payload)
         .expect(&format!("Could not parse stdin into json: '{}'", payload));
-    println!("Read body: '{}'", payload.body);
 
     if !config.disable_hmac_verify {
         let secret = GenericArray::from_iter(config.secret.bytes());
@@ -92,7 +91,12 @@ fn main() {
 
         let left = SecStr::from(format!("sha1={}", signature));
         let right = SecStr::from(auth.bytes().collect::<Vec<_>>());
-        assert!(left == right, "HMAC signature didn't match",);
+        assert!(
+            left == right,
+            "HMAC signature didn't match: {} vs. {}",
+            signature,
+            auth
+        );
     }
 
     let payload: GithubPayload =

@@ -3,8 +3,7 @@ use std::process::{Command, Stdio};
 
 use failure::{err_msg, Error};
 use futures::{
-    future::{self, Either, FutureResult},
-    sink::Sink,
+    future::{self, Either},
     Future,
 };
 use serde::Serialize;
@@ -69,7 +68,6 @@ impl Handler {
         temp_path: PathBuf,
         input: JsonValue,
     ) -> impl Future<Item = (PathBuf, JsonValue), Error = Error> {
-        println!("Running: {:?} :: {:?}", config, action);
         let config = {
             let mut buf: Vec<u8> = Vec::new();
             {
@@ -125,16 +123,24 @@ impl Handler {
                 let input = format!("{}", input);
                 let result = write_all(stdin, input)
                     .and_then(|_| child.wait_with_output())
-                    .map(|output| {
+                    .map_err(|err| err_msg(format!("error: {}", err)))
+                    .and_then(|output| {
                         let stdout =
                             String::from_utf8(output.stdout).unwrap_or_else(|_| String::new());
                         let stderr =
                             String::from_utf8(output.stderr).unwrap_or_else(|_| String::new());
-                        json!({
-                        "stdout": stdout,
-                        "stderr": stderr,
-                    })
-                    }).map_err(|err| err_msg(format!("error: {}", err)));
+                        if output.status.success() {
+                            Either::A(future::ok(json!({
+                                "stdout": stdout,
+                                "stderr": stderr,
+                            })))
+                        } else {
+                            Either::B(future::err(err_msg(format!(
+                                "Failed, stdout: '{}', stderr: '{}'",
+                                stdout, stderr
+                            ))))
+                        }
+                    });
 
                 Box::new(result)
             }
