@@ -1,11 +1,11 @@
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::slice::Iter;
 
 use failure::{err_msg, Error};
-use hyper::StatusCode;
+use futures::{stream, Future};
 use serde_json::Value as JsonValue;
+use tokio::{self, prelude::*};
 use toml::Value;
 
 use Handler;
@@ -32,7 +32,8 @@ impl Hook {
     where
         P: AsRef<Path>,
     {
-        let filename = path.as_ref()
+        let filename = path
+            .as_ref()
             .file_name()
             .ok_or(err_msg("what the fuck bro"))?
             .to_str()
@@ -49,33 +50,20 @@ impl Hook {
     pub fn get_name(&self) -> String {
         self.name.clone()
     }
-    pub fn iter(&self) -> Iter<Handler> {
-        self.handlers.iter()
-    }
-    pub fn handle(
-        &self,
-        req: JsonValue,
-        temp_path: &PathBuf,
-    ) -> Result<(StatusCode, String), Error> {
-        Ok(self.iter()
-            .fold(Ok(req), |prev, handler| {
-                prev.and_then(|val| {
-                    println!("Running {}...", handler.config());
-                    let result = handler.run(&temp_path, val);
-                    println!("{:?}", result);
-                    result
-                })
-            })
-            .map(|res| {
-                (
-                    StatusCode::ACCEPTED,
-                    format!(
-                        "stdout:\n{}\n\nstderr:\n{}",
-                        res.get("stdout").and_then(|v| v.as_str()).unwrap_or(""),
-                        res.get("stderr").and_then(|v| v.as_str()).unwrap_or(""),
-                    ),
-                )
-            })
-            .unwrap_or_else(|err| (StatusCode::BAD_REQUEST, format!("Error: {:?}", err))))
+    pub fn handle(&self, req: JsonValue, temp_path: PathBuf) -> Result<String, String> {
+        let handlers = self
+            .handlers
+            .iter()
+            .map(|handler| (handler.config.clone(), handler.action.clone()))
+            .collect::<Vec<_>>();
+        let st = stream::iter_ok::<_, Error>(handlers.into_iter())
+            .fold((temp_path, req), |(path, prev), (config, action)| {
+                Handler::run(config, action, path, prev)
+            }).map(|_| ())
+            .map_err(|err: Error| {
+                println!("Error from stream: {}", err);
+            });
+        tokio::executor::spawn(st);
+        Ok("success".to_owned())
     }
 }

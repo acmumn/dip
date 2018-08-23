@@ -1,11 +1,13 @@
 //! # Dip
 
-#[macro_use]
 extern crate failure;
 extern crate futures;
 extern crate hyper;
 extern crate mktemp;
+extern crate owning_ref;
 extern crate serde;
+extern crate tokio;
+extern crate tokio_process;
 #[macro_use]
 extern crate serde_json;
 #[macro_use]
@@ -46,12 +48,11 @@ const URIPATTERN_STR: &str = r"/webhook/(?P<name>[A-Za-z._][A-Za-z0-9._]*)";
 
 lazy_static! {
     static ref URIPATTERN: Regex = Regex::new(URIPATTERN_STR).unwrap();
-    // static ref HANDLERS: Mutex<HashMap<String, Box<Handler>>> = Mutex::new(HashMap::new());
+    static ref HANDLERS: Arc<Mutex<HashMap<String, Handler>>> =
+        Arc::new(Mutex::new(HashMap::new()));
     static ref PROGRAMS: Mutex<HashMap<String, PathBuf>> = Mutex::new(HashMap::new());
     static ref HOOKS: Arc<Mutex<HashMap<String, Hook>>> = Arc::new(Mutex::new(HashMap::new()));
 }
-
-// const NOTFOUND: &str = "<html> <head> <style> * { font-family: sans-serif; } body { padding: 20px 60px; } </style> </head> <body> <h1>Looks like you took a wrong turn!</h1> <p>There's nothing to see here.</p> </body> </html>";
 
 fn watch<P>(root: P) -> notify::Result<()>
 where
@@ -68,7 +69,7 @@ where
                 // TODO: don't do this
                 config::load_config(root.as_ref())
             }
-            Err(e) => println!("watch error: {:?}", e),
+            Err(e) => eprintln!("watch error: {:?}", e),
         }
     }
 }

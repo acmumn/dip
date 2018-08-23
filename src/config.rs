@@ -65,7 +65,8 @@ where
                 if !path.is_file() {
                     continue;
                 }
-                match path.file_name()
+                match path
+                    .file_name()
                     .and_then(|s| s.to_str())
                     .ok_or(err_msg("???"))
                     .map(|s| {

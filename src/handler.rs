@@ -1,19 +1,26 @@
-use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use failure::{err_msg, Error};
+use futures::{
+    future::{self, Either},
+    Future,
+};
 use serde::Serialize;
 use serde_json::{Serializer as JsonSerializer, Value as JsonValue};
+use tokio::io::write_all;
+use tokio_process::CommandExt;
 use toml::Value as TomlValue;
 
 use PROGRAMS;
 
+#[derive(Clone, Debug)]
 pub struct Handler {
-    config: TomlValue,
-    action: Action,
+    pub config: TomlValue,
+    pub action: Action,
 }
 
+#[derive(Clone, Debug)]
 pub enum Action {
     Command(String),
     Exec(PathBuf),
@@ -47,8 +54,7 @@ impl Handler {
                         value
                             .canonicalize()
                             .map_err(|_| err_msg("failed to canonicalize the path"))
-                    })
-                    .map(|value| value.clone())?;
+                    }).map(|value| value.clone())?;
                 Action::Exec(program)
             }
         };
@@ -56,81 +62,89 @@ impl Handler {
         Ok(Handler { config, action })
     }
 
-    pub fn run(&self, temp_path: &PathBuf, input: JsonValue) -> Result<JsonValue, Error> {
+    pub fn run(
+        config: TomlValue,
+        action: Action,
+        temp_path: PathBuf,
+        input: JsonValue,
+    ) -> impl Future<Item = (PathBuf, JsonValue), Error = Error> {
         let config = {
             let mut buf: Vec<u8> = Vec::new();
             {
                 let mut serializer = JsonSerializer::new(&mut buf);
-                TomlValue::serialize(&self.config, &mut serializer)?;
+                TomlValue::serialize(&config, &mut serializer).unwrap();
             }
             String::from_utf8(buf).unwrap()
         };
 
-        let output = match &self.action {
+        let output: Box<Future<Item = JsonValue, Error = Error> + Send> = match action {
             Action::Command(ref cmd) => {
                 // TODO: allow some kind of simple variable replacement
-                let child = Command::new("/bin/bash")
+                let mut child = Command::new("/bin/bash");
+                let child = child
                     .current_dir(&temp_path)
                     .env("DIP_ROOT", "lol")
-                    .env("DIP_WORKDIR", temp_path)
+                    .env("DIP_WORKDIR", &temp_path)
                     .arg("-c")
                     .arg(cmd)
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()?;
-                let output = child.wait_with_output()?;
-                if !output.status.success() {
-                    // TODO: get rid of unwraps
-                    return Err(err_msg(format!(
-                        "Command '{}' returned with a non-zero status code: {}\nstdout:\n{}\nstderr:\n{}",
-                        cmd,
-                        output.status,
-                        String::from_utf8(output.stdout).unwrap_or_else(|_| String::new()),
-                        String::from_utf8(output.stderr).unwrap_or_else(|_| String::new())
-                    )));
-                }
-                output
+                    .stderr(Stdio::piped());
+                let result = child
+                    .output_async()
+                    .map_err(|err| err_msg(format!("failed to spawn child: {}", err)))
+                    .and_then(|output| {
+                        let stdout =
+                            String::from_utf8(output.stdout).unwrap_or_else(|_| String::new());
+                        let stderr =
+                            String::from_utf8(output.stderr).unwrap_or_else(|_| String::new());
+                        future::ok(json!({
+                            "stdout": stdout,
+                            "stderr": stderr,
+                        }))
+                    });
+                Box::new(result)
             }
             Action::Exec(ref path) => {
                 let mut child = Command::new(&path)
                     .current_dir(&temp_path)
                     .env("DIP_ROOT", "")
-                    .env("DIP_WORKDIR", temp_path)
+                    .env("DIP_WORKDIR", &temp_path)
                     .arg("--config")
                     .arg(config)
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
-                    .spawn()?;
-                {
-                    match child.stdin {
-                        Some(ref mut stdin) => {
-                            write!(stdin, "{}", input)?;
+                    .spawn_async()
+                    .expect("could not spawn child");
+
+                let stdin = child.stdin().take().unwrap();
+
+                let input = format!("{}", input);
+                let result = write_all(stdin, input)
+                    .and_then(|_| child.wait_with_output())
+                    .map_err(|err| err_msg(format!("error: {}", err)))
+                    .and_then(|output| {
+                        let stdout =
+                            String::from_utf8(output.stdout).unwrap_or_else(|_| String::new());
+                        let stderr =
+                            String::from_utf8(output.stderr).unwrap_or_else(|_| String::new());
+                        if output.status.success() {
+                            Either::A(future::ok(json!({
+                                "stdout": stdout,
+                                "stderr": stderr,
+                            })))
+                        } else {
+                            Either::B(future::err(err_msg(format!(
+                                "Failed, stdout: '{}', stderr: '{}'",
+                                stdout, stderr
+                            ))))
                         }
-                        None => bail!("done fucked"),
-                    };
-                }
-                let output = child.wait_with_output()?;
-                if !output.status.success() {
-                    // TODO: get rid of unwraps
-                    return Err(err_msg(format!(
-                        "'{:?}' returned with a non-zero status code: {}\nstdout:\n{}\nstderr:\n{}",
-                        path,
-                        output.status,
-                        String::from_utf8(output.stdout).unwrap_or_else(|_| String::new()),
-                        String::from_utf8(output.stderr).unwrap_or_else(|_| String::new())
-                    )));
-                }
-                output
+                    });
+
+                Box::new(result)
             }
         };
-
-        let stdout = String::from_utf8(output.stdout).unwrap_or_else(|_| String::new());
-        let stderr = String::from_utf8(output.stderr).unwrap_or_else(|_| String::new());
-        Ok(json!({
-                "stdout": stdout,
-                "stderr": stderr,
-            }))
+        output.map(|x| (temp_path, x))
     }
 }
