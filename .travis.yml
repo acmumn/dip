@@ -9,19 +9,20 @@ os: linux
 matrix:
   fast_finish: true
 
-cache:
-  - ~/.cargo
+cache: cargo
 
 script:
   - cargo test --all
 before_deploy:
   - cargo build --release --all
+  - cargo build --release --examples
 
 deploy:
   - provider: releases
     api_key: $AUTH_TOKEN
     file:
       - target/release/dip
+      - target/release/examples/github
     on:
       condition: $TRAVIS_RUST_VERSION = stable
       tags: true
