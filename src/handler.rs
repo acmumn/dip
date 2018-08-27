@@ -68,6 +68,7 @@ impl Handler {
         temp_path: PathBuf,
         input: JsonValue,
     ) -> impl Future<Item = (PathBuf, JsonValue), Error = Error> {
+        let temp_path_cp = temp_path.clone();
         let config = {
             let mut buf: Vec<u8> = Vec::new();
             {
@@ -77,14 +78,19 @@ impl Handler {
             String::from_utf8(buf).unwrap()
         };
 
+        let command_helper = move |command: &mut Command| {
+            command
+                .current_dir(&temp_path)
+                .env("DIP_WORKDIR", &temp_path);
+        };
+
         let output: Box<Future<Item = JsonValue, Error = Error> + Send> = match action {
             Action::Command(ref cmd) => {
                 // TODO: allow some kind of simple variable replacement
-                let mut child = Command::new("/bin/bash");
-                let child = child
-                    .current_dir(&temp_path)
+                let mut command = Command::new("/bin/bash");
+                command_helper(&mut command);
+                let child = command
                     .env("DIP_ROOT", "lol")
-                    .env("DIP_WORKDIR", &temp_path)
                     .arg("-c")
                     .arg(cmd)
                     .stdin(Stdio::piped())
@@ -106,10 +112,10 @@ impl Handler {
                 Box::new(result)
             }
             Action::Exec(ref path) => {
-                let mut child = Command::new(&path)
-                    .current_dir(&temp_path)
+                let mut command = Command::new(&path);
+                command_helper(&mut command);
+                let mut child = command
                     .env("DIP_ROOT", "")
-                    .env("DIP_WORKDIR", &temp_path)
                     .arg("--config")
                     .arg(config)
                     .stdin(Stdio::piped())
@@ -145,6 +151,6 @@ impl Handler {
                 Box::new(result)
             }
         };
-        output.map(|x| (temp_path, x))
+        output.map(|x| (temp_path_cp, x))
     }
 }

@@ -57,7 +57,16 @@ pub fn dip_service(req: Request<Body>) -> Box<Future<Item = Response<Body>, Erro
             let temp_path = temp_dir.to_path_buf();
             assert!(temp_path.exists());
 
-            let hook = hooks.get(&name).unwrap();
+            let hook = match hooks.get(&name) {
+                Some(hook) => hook,
+                None => {
+                    temp_dir.release();
+                    return Response::builder()
+                        .status(StatusCode::NOT_FOUND)
+                        .body(Body::from("not found"))
+                        .unwrap_or_else(|_| Response::new(Body::from("not found")));
+                }
+            };
             let (code, msg) = match hook.handle(req_obj, temp_path) {
                 Ok(msg) => (StatusCode::ACCEPTED, msg),
                 Err(msg) => (StatusCode::BAD_REQUEST, msg),
