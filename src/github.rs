@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::env;
 use std::iter::FromIterator;
 use std::path::PathBuf;
 use std::process::Command;
@@ -13,6 +12,8 @@ use serde_json::{self, Serializer as JsonSerializer, Value as JsonValue};
 use sha1::Sha1;
 use structopt::StructOpt;
 use toml::Value as TomlValue;
+
+use handler::Environment;
 
 #[derive(StructOpt)]
 struct Opt {
@@ -50,7 +51,11 @@ fn default_path() -> PathBuf {
     PathBuf::from(".")
 }
 
-pub fn main(config: &TomlValue, input: &JsonValue) -> Result<JsonValue, Error> {
+pub(crate) fn main(
+    env: &Environment,
+    config: &TomlValue,
+    input: &JsonValue,
+) -> Result<JsonValue, Error> {
     let config_str = {
         let mut buf: Vec<u8> = Vec::new();
         {
@@ -94,8 +99,7 @@ pub fn main(config: &TomlValue, input: &JsonValue) -> Result<JsonValue, Error> {
 
     let payload: GithubPayload =
         serde_json::from_str(&payload.body).expect("Could not parse Github input into json");
-    let mut target_path =
-        PathBuf::from(env::var("DIP_WORKDIR").expect("Could not determine working directory"));
+    let mut target_path = env.workdir.clone();
     target_path.push(&config.path);
     Command::new("git")
         .arg("clone")

@@ -26,11 +26,18 @@ pub struct Handler {
 #[derive(Clone)]
 pub enum Action {
     /// A builtin function (for example, the Github handler).
-    Builtin(fn(&TomlValue, &JsonValue) -> Result<JsonValue, Error>),
+    Builtin(fn(&Environment, &TomlValue, &JsonValue) -> Result<JsonValue, Error>),
     /// A command represents a string to be executed by `bash -c`.
     Command(String),
     /// A program represents one of the handlers specified in the `handlers` directory.
     Program(String),
+}
+
+/// Describes the environment for running a builtin.
+#[derive(Clone)]
+pub struct Environment {
+    /// The current working directory.
+    pub workdir: PathBuf,
 }
 
 impl fmt::Debug for Action {
@@ -94,7 +101,9 @@ impl Handler {
 
         let output: Box<Future<Item = JsonValue, Error = Error> + Send> = match action {
             Action::Builtin(ref func) => {
-                let result = func(&config, &input);
+                let workdir = temp_path_cp.clone();
+                let env = Environment { workdir };
+                let result = func(&env, &config, &input);
                 Box::new(future::result(result))
             }
             Action::Command(ref cmd) => {
