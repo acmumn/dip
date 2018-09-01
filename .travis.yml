@@ -13,7 +13,7 @@ services:
 cache: cargo
 
 script:
-  - cargo test --all
+  - if [ -z "$TRAVIS_TAG" ]; then cargo test --all; fi
 before_deploy:
   - ./ci/build-release.sh dip ${TRAVIS_TAG}-${TRAVIS_OS_NAME}
 
