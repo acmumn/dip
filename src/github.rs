@@ -106,5 +106,9 @@ pub fn main(config: &TomlValue, input: &JsonValue) -> Result<JsonValue, Error> {
         .arg(&target_path)
         .output()
         .expect("Could not spawn process to clone");
-    Ok(json!(1))
+    Ok(json!(match target_path.to_str() {
+        // TODO: what
+        Some(s) => s,
+        None => "",
+    }))
 }
