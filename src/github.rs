@@ -1,28 +1,18 @@
-extern crate dip;
-extern crate hmac;
-extern crate secstr;
-extern crate serde_json;
-extern crate sha1;
-#[macro_use]
-extern crate serde_derive;
-extern crate failure;
-extern crate generic_array;
-#[macro_use]
-extern crate structopt;
-
 use std::collections::HashMap;
 use std::env;
-use std::io::{self, Read};
 use std::iter::FromIterator;
 use std::path::PathBuf;
 use std::process::Command;
 
-use failure::err_msg;
+use failure::{err_msg, Error};
 use generic_array::GenericArray;
 use hmac::{Hmac, Mac};
 use secstr::*;
+use serde::Serialize;
+use serde_json::{self, Serializer as JsonSerializer, Value as JsonValue};
 use sha1::Sha1;
 use structopt::StructOpt;
+use toml::Value as TomlValue;
 
 #[derive(StructOpt)]
 struct Opt {
@@ -60,16 +50,19 @@ fn default_path() -> PathBuf {
     PathBuf::from(".")
 }
 
-fn main() {
-    let args = Opt::from_args();
-    let config: Config = serde_json::from_str(&args.config).expect("Could not parse config.");
+pub fn main(config: &TomlValue, input: &JsonValue) -> Result<JsonValue, Error> {
+    let config_str = {
+        let mut buf: Vec<u8> = Vec::new();
+        {
+            let mut serializer = JsonSerializer::new(&mut buf);
+            TomlValue::serialize(&config, &mut serializer).unwrap();
+        }
+        String::from_utf8(buf).unwrap()
+    };
+    let config: Config = serde_json::from_str(&config_str)?;
 
-    let mut payload = String::new();
-    io::stdin()
-        .read_to_string(&mut payload)
-        .expect("Could not read from stdin");
-    let payload: Payload = serde_json::from_str(&payload)
-        .expect(&format!("Could not parse stdin into json: '{}'", payload));
+    let payload_str = format!("{}", input);
+    let payload: Payload = serde_json::from_str(&payload_str)?;
 
     if !config.disable_hmac_verify {
         let secret = GenericArray::from_iter(config.secret.bytes());
@@ -113,4 +106,5 @@ fn main() {
         .arg(&target_path)
         .output()
         .expect("Could not spawn process to clone");
+    Ok(json!(1))
 }

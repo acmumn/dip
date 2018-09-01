@@ -1,7 +1,13 @@
 //! # Dip
 
+extern crate hmac;
+extern crate secstr;
+extern crate sha1;
+#[macro_use]
+extern crate serde_derive;
 extern crate failure;
 extern crate futures;
+extern crate generic_array;
 extern crate hyper;
 extern crate mktemp;
 extern crate owning_ref;
@@ -20,6 +26,7 @@ extern crate toml;
 extern crate walkdir;
 
 pub mod config;
+pub mod github;
 pub mod handler;
 pub mod hook;
 pub mod service;
@@ -48,9 +55,8 @@ const URIPATTERN_STR: &str = r"/webhook/(?P<name>[A-Za-z._][A-Za-z0-9._]*)";
 
 lazy_static! {
     static ref URIPATTERN: Regex = Regex::new(URIPATTERN_STR).unwrap();
-    static ref HANDLERS: Arc<Mutex<HashMap<String, Handler>>> =
+    static ref PROGRAMS: Arc<Mutex<HashMap<String, PathBuf>>> =
         Arc::new(Mutex::new(HashMap::new()));
-    static ref PROGRAMS: Mutex<HashMap<String, PathBuf>> = Mutex::new(HashMap::new());
     static ref HOOKS: Arc<Mutex<HashMap<String, Hook>>> = Arc::new(Mutex::new(HashMap::new()));
 }
 

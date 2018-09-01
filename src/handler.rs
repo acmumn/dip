@@ -1,3 +1,4 @@
+use std::fmt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -12,7 +13,7 @@ use tokio::io::write_all;
 use tokio_process::CommandExt;
 use toml::Value as TomlValue;
 
-use PROGRAMS;
+use github;
 
 #[derive(Clone, Debug)]
 pub struct Handler {
@@ -20,10 +21,20 @@ pub struct Handler {
     pub action: Action,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum Action {
+    Builtin(fn(&TomlValue, &JsonValue) -> Result<JsonValue, Error>),
     Command(String),
-    Exec(PathBuf),
+    Program(String),
+}
+
+impl fmt::Debug for Action {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self {
+            Action::Builtin(_) => write!(f, "Builtin"),
+            _ => write!(f, "{:?}", self),
+        }
+    }
 }
 
 impl Handler {
@@ -45,17 +56,18 @@ impl Handler {
                     .ok_or(err_msg("'command' is not a string."))?;
                 Action::Command(command.to_owned())
             }
+            "github" => Action::Builtin(github::main),
             handler => {
-                let programs = PROGRAMS.lock().unwrap();
-                let program = programs
-                    .get(handler)
-                    .ok_or(err_msg(format!("'{}' is not a valid executable", handler)))
-                    .and_then(|value| {
-                        value
-                            .canonicalize()
-                            .map_err(|_| err_msg("failed to canonicalize the path"))
-                    }).map(|value| value.clone())?;
-                Action::Exec(program)
+                // let programs = HANDLERS.lock().unwrap();
+                // let program = programs
+                //     .get(handler)
+                //     .ok_or(err_msg(format!("'{}' is not a valid executable", handler)))
+                //     .and_then(|value| {
+                //         value
+                //             .canonicalize()
+                //             .map_err(|_| err_msg("failed to canonicalize the path"))
+                //     }).map(|value| value.clone())?;
+                Action::Program(handler.to_owned())
             }
         };
         let config = config.clone();
@@ -69,7 +81,7 @@ impl Handler {
         input: JsonValue,
     ) -> impl Future<Item = (PathBuf, JsonValue), Error = Error> {
         let temp_path_cp = temp_path.clone();
-        let config = {
+        let config_str = {
             let mut buf: Vec<u8> = Vec::new();
             {
                 let mut serializer = JsonSerializer::new(&mut buf);
@@ -85,6 +97,10 @@ impl Handler {
         };
 
         let output: Box<Future<Item = JsonValue, Error = Error> + Send> = match action {
+            Action::Builtin(ref func) => {
+                let result = func(&config, &input);
+                Box::new(future::result(result))
+            }
             Action::Command(ref cmd) => {
                 // TODO: allow some kind of simple variable replacement
                 let mut command = Command::new("/bin/bash");
@@ -111,13 +127,13 @@ impl Handler {
                     });
                 Box::new(result)
             }
-            Action::Exec(ref path) => {
+            Action::Program(ref path) => {
                 let mut command = Command::new(&path);
                 command_helper(&mut command);
                 let mut child = command
                     .env("DIP_ROOT", "")
                     .arg("--config")
-                    .arg(config)
+                    .arg(config_str)
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())

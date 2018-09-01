@@ -51,6 +51,7 @@ where
         let mut programs = PROGRAMS.lock().unwrap();
         // TODO: some kind of smart diff
         programs.clear();
+
         let programs_dir = {
             let mut p = root.as_ref().to_path_buf();
             p.push("handlers");

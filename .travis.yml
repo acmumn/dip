@@ -1,28 +1,27 @@
 language: rust
-sudo: false
+sudo: required
 
 rust:
   - stable
-  - beta
   - nightly
 os: linux
 matrix:
   fast_finish: true
+services:
+  - docker
 
 cache: cargo
 
 script:
   - cargo test --all
 before_deploy:
-  - cargo build --release --all
-  - cargo build --release --examples
+  - ./ci/build-release.sh dip ${TRAVIS_TAG}-${TRAVIS_OS_NAME}
 
 deploy:
   - provider: releases
     api_key: $AUTH_TOKEN
     file:
-      - target/release/dip
-      - target/release/examples/github
+      - dip-*
     on:
       condition: $TRAVIS_RUST_VERSION = stable
       tags: true
