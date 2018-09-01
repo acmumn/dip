@@ -1,3 +1,5 @@
+//! The webhook.
+
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -10,12 +12,14 @@ use toml::Value;
 
 use Handler;
 
+/// A webhook.
 pub struct Hook {
     name: String,
     handlers: Vec<Handler>,
 }
 
 impl Hook {
+    /// Creates a hook from a (name, config) pair.
     pub fn from(name: impl Into<String>, config: &Value) -> Result<Self, Error> {
         let name = name.into();
         let handlers = config
@@ -28,6 +32,8 @@ impl Hook {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Hook { name, handlers })
     }
+
+    /// Creates a hook from a configuration file.
     pub fn from_file<P>(path: P) -> Result<Hook, Error>
     where
         P: AsRef<Path>,
@@ -47,10 +53,13 @@ impl Hook {
         let hook = Hook::from(filename, &config)?;
         Ok(hook)
     }
+
+    /// Gets the name of this hook.
     pub fn get_name(&self) -> String {
         self.name.clone()
     }
-    pub fn handle(&self, req: JsonValue, temp_path: PathBuf) -> Result<String, String> {
+
+    pub(crate) fn handle(&self, req: JsonValue, temp_path: PathBuf) -> Result<String, String> {
         let handlers = self
             .handlers
             .iter()

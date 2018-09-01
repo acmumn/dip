@@ -15,16 +15,21 @@ use toml::Value as TomlValue;
 
 use github;
 
+/// A single instance of handler as defined by the config.
 #[derive(Clone, Debug)]
 pub struct Handler {
-    pub config: TomlValue,
-    pub action: Action,
+    pub(crate) config: TomlValue,
+    pub(crate) action: Action,
 }
 
+/// Describes an action that a hook can take.
 #[derive(Clone)]
 pub enum Action {
+    /// A builtin function (for example, the Github handler).
     Builtin(fn(&TomlValue, &JsonValue) -> Result<JsonValue, Error>),
+    /// A command represents a string to be executed by `bash -c`.
     Command(String),
+    /// A program represents one of the handlers specified in the `handlers` directory.
     Program(String),
 }
 
@@ -38,10 +43,7 @@ impl fmt::Debug for Action {
 }
 
 impl Handler {
-    pub fn config(&self) -> &TomlValue {
-        &self.config
-    }
-    pub fn from(config: &TomlValue) -> Result<Self, Error> {
+    pub(crate) fn from(config: &TomlValue) -> Result<Self, Error> {
         let handler = config
             .get("type")
             .ok_or(err_msg("No 'type' found."))?
@@ -57,23 +59,13 @@ impl Handler {
                 Action::Command(command.to_owned())
             }
             "github" => Action::Builtin(github::main),
-            handler => {
-                // let programs = HANDLERS.lock().unwrap();
-                // let program = programs
-                //     .get(handler)
-                //     .ok_or(err_msg(format!("'{}' is not a valid executable", handler)))
-                //     .and_then(|value| {
-                //         value
-                //             .canonicalize()
-                //             .map_err(|_| err_msg("failed to canonicalize the path"))
-                //     }).map(|value| value.clone())?;
-                Action::Program(handler.to_owned())
-            }
+            handler => Action::Program(handler.to_owned()),
         };
         let config = config.clone();
         Ok(Handler { config, action })
     }
 
+    /// Runs the given [action](Action) and produces a [Future](Future).
     pub fn run(
         config: TomlValue,
         action: Action,
@@ -93,7 +85,11 @@ impl Handler {
         let command_helper = move |command: &mut Command| {
             command
                 .current_dir(&temp_path)
-                .env("DIP_WORKDIR", &temp_path);
+                .env("DIP_ROOT", "lol")
+                .env("DIP_WORKDIR", &temp_path)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
         };
 
         let output: Box<Future<Item = JsonValue, Error = Error> + Send> = match action {
@@ -105,13 +101,7 @@ impl Handler {
                 // TODO: allow some kind of simple variable replacement
                 let mut command = Command::new("/bin/bash");
                 command_helper(&mut command);
-                let child = command
-                    .env("DIP_ROOT", "lol")
-                    .arg("-c")
-                    .arg(cmd)
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped());
+                let child = command.arg("-c").arg(cmd);
                 let result = child
                     .output_async()
                     .map_err(|err| err_msg(format!("failed to spawn child: {}", err)))
@@ -131,12 +121,8 @@ impl Handler {
                 let mut command = Command::new(&path);
                 command_helper(&mut command);
                 let mut child = command
-                    .env("DIP_ROOT", "")
                     .arg("--config")
                     .arg(config_str)
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
                     .spawn_async()
                     .expect("could not spawn child");
 

@@ -1,4 +1,19 @@
 //! # Dip
+//!
+//! The configurable webhook server. Latest stable binary releases for Linux are available on the [releases][1] page.
+//!
+//! ## Getting Started
+//!
+//! Setup is incredibly simple: first, obtain a copy of `dip` either through the binary releases page or by compiling from source.
+//! Then, create a directory that you'll use as your `DIP_ROOT` directory. It should look like this:
+//!
+//! ```text
+//!
+//! ```
+//!
+//! [1]: https://github.com/acmumn/dip/releases
+
+#![deny(missing_docs)]
 
 extern crate hmac;
 extern crate secstr;
@@ -26,24 +41,22 @@ extern crate toml;
 extern crate walkdir;
 
 pub mod config;
-pub mod github;
-pub mod handler;
+mod github;
+mod handler;
 pub mod hook;
-pub mod service;
+mod service;
 
 use std::collections::HashMap;
 use std::net::SocketAddrV4;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
 
 use failure::Error;
 use hyper::rt::Future;
 use hyper::service::service_fn;
 use hyper::Server;
-use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use regex::Regex;
 
 pub use config::Config;
@@ -54,30 +67,11 @@ use service::*;
 const URIPATTERN_STR: &str = r"/webhook/(?P<name>[A-Za-z._][A-Za-z0-9._]*)";
 
 lazy_static! {
-    static ref URIPATTERN: Regex = Regex::new(URIPATTERN_STR).unwrap();
+    static ref URIPATTERN: Regex =
+        Regex::new(URIPATTERN_STR).expect("Could not compile regular expression.");
     static ref PROGRAMS: Arc<Mutex<HashMap<String, PathBuf>>> =
         Arc::new(Mutex::new(HashMap::new()));
     static ref HOOKS: Arc<Mutex<HashMap<String, Hook>>> = Arc::new(Mutex::new(HashMap::new()));
-}
-
-fn watch<P>(root: P) -> notify::Result<()>
-where
-    P: AsRef<Path>,
-{
-    let (tx, rx) = mpsc::channel();
-    let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_secs(1))?;
-    println!("Watching {:?}", root.as_ref().to_path_buf());
-    watcher.watch(root.as_ref(), RecursiveMode::Recursive)?;
-    loop {
-        match rx.recv() {
-            Ok(_) => {
-                // for now, naively reload entire config every time
-                // TODO: don't do this
-                config::load_config(root.as_ref())
-            }
-            Err(e) => eprintln!("watch error: {:?}", e),
-        }
-    }
 }
 
 /// Main entry point of the entire application.
@@ -85,7 +79,7 @@ pub fn run(config: &Config) -> Result<(), Error> {
     config::load_config(&config.root);
 
     let v = config.root.clone();
-    thread::spawn(|| watch(v));
+    thread::spawn(|| config::watch(v));
 
     let addr: SocketAddrV4 = SocketAddrV4::from_str(config.bind.as_ref())?;
     let server = Server::bind(&addr.into())

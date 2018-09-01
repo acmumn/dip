@@ -1,11 +1,19 @@
+//! Configuration.
+
+use std::default::Default;
+use std::env;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::time::Duration;
 
 use failure::{err_msg, Error};
+use notify::{self, RecommendedWatcher, RecursiveMode, Watcher};
 use walkdir::WalkDir;
 
 use Hook;
 use {HOOKS, PROGRAMS};
 
+/// The configuration to be parsed from the command line.
 #[derive(Debug, StructOpt)]
 pub struct Config {
     /// The root configuration directory for dip. This argument is required.
@@ -20,27 +28,38 @@ pub struct Config {
     pub hook: Option<String>,
 }
 
-impl Config {
-    pub fn new(root: impl AsRef<Path>) -> Self {
-        let root = root.as_ref().to_path_buf();
+impl Default for Config {
+    fn default() -> Self {
+        let root = env::current_dir().unwrap();
         assert!(root.exists());
 
         let bind = "0.0.0.0:5000".to_owned();
         let hook = None;
         Config { root, bind, hook }
     }
-    pub fn bind(mut self, value: Option<String>) -> Config {
-        if let Some(value) = value {
-            self.bind = value;
+}
+
+pub(crate) fn watch<P>(root: P) -> notify::Result<()>
+where
+    P: AsRef<Path>,
+{
+    let (tx, rx) = mpsc::channel();
+    let mut watcher: RecommendedWatcher = Watcher::new(tx, Duration::from_secs(1))?;
+    println!("Watching {:?}", root.as_ref().to_path_buf());
+    watcher.watch(root.as_ref(), RecursiveMode::Recursive)?;
+    loop {
+        match rx.recv() {
+            Ok(_) => {
+                // for now, naively reload entire config every time
+                // TODO: don't do this
+                load_config(root.as_ref())
+            }
+            Err(e) => eprintln!("watch error: {:?}", e),
         }
-        return self;
-    }
-    pub fn hook(mut self, value: Option<String>) -> Config {
-        self.hook = value;
-        return self;
     }
 }
 
+/// Load config from the root directory. This is called by the watcher.
 pub fn load_config<P>(root: P)
 where
     P: AsRef<Path>,
@@ -48,7 +67,13 @@ where
     println!("Reloading config...");
     // hold on to the lock while config is being reloaded
     {
-        let mut programs = PROGRAMS.lock().unwrap();
+        let mut programs = match PROGRAMS.lock() {
+            Ok(programs) => programs,
+            Err(err) => {
+                eprintln!("Could not acquire programs lock: {}", err);
+                return;
+            }
+        };
         // TODO: some kind of smart diff
         programs.clear();
 
@@ -80,7 +105,13 @@ where
         }
     }
     {
-        let mut hooks = HOOKS.lock().unwrap();
+        let mut hooks = match HOOKS.lock() {
+            Ok(hooks) => hooks,
+            Err(err) => {
+                eprintln!("Could not acquire hooks lock: {}", err);
+                return;
+            }
+        };
         hooks.clear();
         let hooks_dir = {
             let mut p = root.as_ref().to_path_buf();

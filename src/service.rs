@@ -6,7 +6,9 @@ use mktemp::Temp;
 
 use {HOOKS, URIPATTERN};
 
-pub fn dip_service(req: Request<Body>) -> Box<Future<Item = Response<Body>, Error = Error> + Send> {
+pub(crate) fn dip_service(
+    req: Request<Body>,
+) -> Box<Future<Item = Response<Body>, Error = Error> + Send> {
     let path = req.uri().path().to_owned();
     let captures = match URIPATTERN.captures(path.as_ref()) {
         Some(value) => value,
