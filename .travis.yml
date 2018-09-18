@@ -15,7 +15,7 @@ cache: cargo
 script:
   - if [ -z "$TRAVIS_TAG" ]; then cargo test --all; fi
 before_deploy:
-  - ./ci/build-release.sh dip ${TRAVIS_TAG}-${TRAVIS_OS_NAME}
+  - ./ci/build.sh dip ${TRAVIS_TAG}-${TRAVIS_OS_NAME}
 
 deploy:
   - provider: releases
@@ -27,4 +27,9 @@ deploy:
       condition: $TRAVIS_RUST_VERSION = stable
       tags: true
     skip_cleanup: true
-
+  - provider: script
+    script: ./ci/book.sh
+    skip_cleanup: true
+    on:
+      condition: $TRAVIS_RUST_VERSION = stable
+      tags: true

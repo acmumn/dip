@@ -1,32 +1,7 @@
 /*!
 # Dip
 
-The configurable webhook server. Latest stable binary releases for Linux are available on the [releases][1] page.
-
-## Flow
-
-In your config file, you define **hooks**: endpoints that are listening for input. Each hook comprises of a series
-of handlers, which are building blocks of the hook. The hook will execute each handler in order, taking the output
-of one and passing it into the input of the next.
-
-## Getting Started
-
-Setup is incredibly simple: first, obtain a copy of `dip` either through the binary releases page or by compiling from source.
-Then, create a directory that you'll use as your `DIP_ROOT` directory. It should look like this:
-
-```text
-root
-├─handlers
-│ ├─executable
-├─hooks 
-│ ├─hookname
-```
-
-Handlers exist in the form of executables that take a `--config` and an input via `stdin`. These inputs should
-take the form of JSON objects. Usually config is passed through the hook config, and stdin is the output of the
-previous handler.
-
-[1]: https://github.com/acmumn/dip/releases
+The configurable webhook server. Latest stable binary releases for Linux are available on the releases page.
 */
 
 #![deny(missing_docs)]
