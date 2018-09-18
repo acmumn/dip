@@ -32,7 +32,7 @@ echo "<meta http-equiv=refresh content=0;url='${LATEST_TAG}/'>" > index.html
 
 # For builds triggered by a tag, $TRAVIS_BRANCH will be set to the tag
 rm -rf "$TRAVIS_BRANCH"
-cp -r ../target/doc/book "$TRAVIS_BRANCH"
+cp -r ../../target/doc/book "$TRAVIS_BRANCH"
 git add --all
 git commit -m "Upload documentation for $TRAVIS_BRANCH"
 
