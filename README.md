@@ -1,10 +1,10 @@
-Dip
-===
+Dip: Configurable Webhook Server
+================================
 
 [![](https://api.travis-ci.org/acmumn/dip.svg?branch=master)](https://travis-ci.org/acmumn/dip)
 [![](https://img.shields.io/badge/rewritten-in%20rust-%23dea584.svg)](https://github.com/ansuz/RIIR)
 
-Configurable webhook server.
+[Documentation](https://acmumn.github.io/dip/)
 
 Express your webhooks in terms of composable blocks such as:
 
