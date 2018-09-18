@@ -17,7 +17,8 @@ fi
 # of the guide at the same time (See #165)
 
 # This builds the book in target/doc/guide. See https://github.com/rust-lang-nursery/mdBook/issues/698
-mdbook build -d ../target/doc/guide
+mkdir -p ../target/doc
+mdbook build -d ../target/doc/book
 
 # Get the lastest tag across all branches
 # https://stackoverflow.com/a/7261049/3549270
@@ -31,7 +32,7 @@ echo "<meta http-equiv=refresh content=0;url='${LATEST_TAG}/'>" > index.html
 
 # For builds triggered by a tag, $TRAVIS_BRANCH will be set to the tag
 rm -rf "$TRAVIS_BRANCH"
-cp -r ../target/doc/guide "$TRAVIS_BRANCH"
+cp -r ../target/doc/book "$TRAVIS_BRANCH"
 git add --all
 git commit -m "Upload documentation for $TRAVIS_BRANCH"
 
