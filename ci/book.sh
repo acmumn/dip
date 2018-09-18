@@ -17,7 +17,7 @@ fi
 # of the guide at the same time (See #165)
 
 # This builds the book in target/doc/guide. See https://github.com/rust-lang-nursery/mdBook/issues/698
-mdbook build -d ../target/doc/guide guide
+mdbook build -d ../target/doc/guide
 
 # Get the lastest tag across all branches
 # https://stackoverflow.com/a/7261049/3549270
